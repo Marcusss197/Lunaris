@@ -86,7 +86,7 @@ export async function searchSteamWallpapers(
 }
 
 // Traduz título com DeepL (só CJK)
-export async function translateTitle(text: string, targetLang: string = "PT-BR"): Promise<string> {
+export async function translateTitle(text: string, targetLang: string = "EN-US"): Promise<string> {
   const apiKey = process.env.DEEPL_API_KEY
   if (!apiKey) return text
   const hasCJK = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(text)
@@ -142,9 +142,9 @@ SUBJECT - Species/type: human, elf, demon, angel, monster-girl, furry, kemonomim
 MOOD/THEME: cute, sexy, romantic, dark, mysterious, epic, cozy, energetic, horror, gore
 
 NSFW/EXPLICIT (tag honestly if present):
-- ecchi, nsfw, explicit, nudity
-- sex, oral, anal, vaginal, gangbang, threesome, yuri, yaoi, futanari
-- fetish tags: bdsm, bondage, tentacles, vore, giantess, feet, femboy, trap, inflation, lactation, ahegao, mind-control, rape, netorare, incest, loli (if clearly underage-styled), shota (if clearly underage-styled)
+- ecchi, nsfw, explicit, nudity, +18, HMV
+- sex, oral, anal, vaginal, gangbang, threesome, cnc, yuri, yaoi, futanari
+- fetish tags: bdsm, bondage, tentacles, vore, giantess, feet, femboy, trap, dog, inflation, lactation, ahegao, mind-control, rape, netorare, bestiality, knot, incest, loli (if clearly underage-styled), shota (if clearly underage-styled)
 
 Return max 12 tags, most relevant first.
 Example for explicit content: ["anime","female","nude","big-breasts","nsfw","explicit","bdsm","bondage","lingerie","pink","solo","ecchi"]
@@ -177,76 +177,42 @@ async function fetchImageAsBase64(url: string): Promise<string> {
   return Buffer.from(buffer).toString("base64")
 }
 
-// Detecta tags via WD SwinV2 Tagger V3 (Hugging Face)
-// Modelo especializado em anime/ilustração — muito mais consistente que LLMs pra tagging
-export async function detectTagsWithWD14(previewUrl: string): Promise<string[]> {
-  const apiKey = process.env.HF_API_KEY
-  if (!apiKey) return []
-
+// Detecta tags via WD SwinV2 Tagger V3 rodando localmente
+// Servidor Python em lunaris-tagger/tagger_server.py
+// Rodar: cd lunaris-tagger && venv\Scripts\activate && uvicorn tagger_server:app --port 8000
+export async function detectTagsWithWD14(previewUrl: string, title: string = ""): Promise<string[]> {
   try {
-    const imageRes = await fetch(previewUrl)
-    if (!imageRes.ok) return []
-    const imageBlob = await imageRes.blob()
+    const res = await fetch("http://127.0.0.1:8000/tag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: previewUrl, threshold: 0.15, title }),
+    })
 
-    const res = await fetch(
-      "https://router.huggingface.co/hf-inference/models/SmilingWolf/wd-swinv2-tagger-v3",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/octet-stream",
-        },
-        body: imageBlob,
-      }
-    )
+    if (!res.ok) return []
 
-    if (!res.ok) {
-      console.warn("WD14 não respondeu:", res.status)
-      return []
-    }
+    const data: { tags?: string[]; nsfw?: boolean; error?: string } = await res.json()
+    if (data.error) { console.warn("WD14:", data.error); return [] }
 
-    const data: Record<string, number> = await res.json()
-
-    return Object.entries(data)
-      .filter(([tag, score]) => score > 0.35 && !tag.startsWith("rating/"))
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 15)
-      .map(([tag]) => tag.replace(/_/g, " "))
-  } catch (err) {
-    console.error("Erro no WD14:", err)
+    return data.tags ?? []
+  } catch {
+    // Servidor local não tá rodando — ignora silenciosamente
     return []
   }
 }
 
-// Detecta rating NSFW via WD SwinV2 Tagger V3
+// Detecta NSFW via servidor local WD14
 export async function detectNsfwWithWD14(previewUrl: string): Promise<boolean> {
-  const apiKey = process.env.HF_API_KEY
-  if (!apiKey) return false
-
   try {
-    const imageRes = await fetch(previewUrl)
-    if (!imageRes.ok) return false
-    const imageBlob = await imageRes.blob()
-
-    const res = await fetch(
-      "https://router.huggingface.co/hf-inference/models/SmilingWolf/wd-swinv2-tagger-v3",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/octet-stream",
-        },
-        body: imageBlob,
-      }
-    )
+    const res = await fetch("http://127.0.0.1:8000/tag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: previewUrl, threshold: 0.5 }),
+    })
 
     if (!res.ok) return false
 
-    const data: Record<string, number> = await res.json()
-    const explicit = data["rating/explicit"] ?? 0
-    const questionable = data["rating/questionable"] ?? 0
-
-    return explicit > 0.5 || questionable > 0.7
+    const data: { tags?: string[]; nsfw?: boolean } = await res.json()
+    return data.nsfw ?? false
   } catch {
     return false
   }

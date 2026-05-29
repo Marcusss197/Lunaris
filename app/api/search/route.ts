@@ -78,16 +78,16 @@ async function indexInBackground(items: { wallpaper: Wallpaper; titleOriginal: s
   }
 }
 
-// Processa tags via WD14 para wallpapers sem ai_tags
+// Processa tags via WD14 para wallpapers sem ai_tags (máx 5 por batch com delay)
 async function retagWithWD14(items: { wallpaper: Wallpaper; titleOriginal: string }[]) {
-  if (!process.env.HF_API_KEY) return
-
-  const batch = items.slice(0, 10)
+  const batch = items.slice(0, 5)
   console.log(`🏷️  WD14 tagueando ${batch.length} wallpapers...`)
 
   for (const { wallpaper, titleOriginal } of batch) {
     try {
-      const aiTags = await detectTagsWithWD14(wallpaper.previewUrl)
+      // Delay de 500ms entre cada request pro servidor local não sobrecarregar
+      await new Promise((r) => setTimeout(r, 500))
+      const aiTags = await detectTagsWithWD14(wallpaper.previewUrl, wallpaper.title)
       if (aiTags.length > 0) {
         await upsertWallpapers([toDbWallpaper(wallpaper, aiTags, titleOriginal)])
         console.log(`  ✓ [${wallpaper.id}] ${aiTags.slice(0, 5).join(", ")}...`)
