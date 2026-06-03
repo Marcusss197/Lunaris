@@ -7,7 +7,7 @@ const WALLPAPER_ENGINE_APP_ID = "431960"
 const STEAM_API_BASE = "https://api.steampowered.com"
 
 export type WallpaperType = "all" | "Scene" | "Application" | "Video"
-export type SortMode = "recent" | "subscribed" | "popular_week" | "popular_month" | "popular_3months" | "popular_year" | "popular_alltime"
+export type SortMode = "recent" | "subscribed" | "popular_week" | "popular_month" | "popular_3months" | "popular_6months" | "popular_year" | "popular_alltime"
 
 function getQueryType(sort: SortMode): string {
   if (sort === "recent") return "1"
@@ -19,6 +19,7 @@ function getTrendDays(sort: SortMode): string | null {
   if (sort === "popular_week") return "7"
   if (sort === "popular_month") return "30"
   if (sort === "popular_3months") return "90"
+  if (sort === "popular_6months") return "180"
   if (sort === "popular_year") return "365"
   if (sort === "popular_alltime") return "9999"
   return null
@@ -143,8 +144,8 @@ MOOD/THEME: cute, sexy, romantic, dark, mysterious, epic, cozy, energetic, horro
 
 NSFW/EXPLICIT (tag honestly if present):
 - ecchi, nsfw, explicit, nudity, +18, HMV
-- sex, oral, anal, vaginal, gangbang, threesome, cnc, yuri, yaoi, futanari
-- fetish tags: bdsm, bondage, tentacles, vore, giantess, feet, femboy, trap, dog, inflation, lactation, ahegao, mind-control, rape, netorare, bestiality, knot, incest, loli (if clearly underage-styled), shota (if clearly underage-styled)
+- sex, oral, anal, vaginal, cock, gangbang, threesome, cnc, yuri, yaoi, futanari
+- fetish tags: bdsm, bondage, tentacles, vore, giantess, feet, femboy, trap, dog, horse, insect, tattoo, inflation, lactation, ahegao, mind-control, rape, netorare, bestiality, knot, incest, loli (if clearly underage-styled), shota (if clearly underage-styled)
 
 Return max 12 tags, most relevant first.
 Example for explicit content: ["anime","female","nude","big-breasts","nsfw","explicit","bdsm","bondage","lingerie","pink","solo","ecchi"]
