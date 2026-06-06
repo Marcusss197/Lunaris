@@ -8,27 +8,18 @@ A Steam não tem filtros decentes. Títulos com kanji dificultam ao buscar por w
 
 ## Funcionalidades
 
-- 🔍 Busca por nome com suporte a caracteres CJK
-- 🏷️ Filtros por tipo (Scene, Vídeo, Aplicativo)
+- 🔍 Busca por Titulo ou Tag
+- 🏷️ Filtros diversos (Scene, Vídeo, Aplicativo, Resoluções, Cores, etc)
 - 🤖 Tradução automática de títulos via DeepL
-- 🎨 Tags automáticas via WD14 Tagger (Hugging Face)
+- 🎨 Tags automáticas via Qwen2 (Ollama)
 - 🔞 Modo +18 com confirmação de idade
-- ⚡ Preview das imagens direto do CDN da Steam
-- 💾 Banco de dados leve via Supabase
+- 💾 Banco de dados via Supabase
+- ⭐ Avaliação nos wallpapers do proprio site
 
 ## Stack
 
 - **Frontend/Backend**: Next.js 14 + React + TypeScript + Tailwind CSS
 - **Banco de dados**: Supabase (PostgreSQL)
-- **APIs**: Steam Workshop API, DeepL, Hugging Face (WD14)
+- **APIs**: Steam Workshop API, DeepL
+- **IA**: Qwen2 (Ollama)
 
-## Setup
-
-```bash
-npm install
-cp .env.local.example .env.local
-# Preencha as chaves no .env.local
-npm run dev
-```
-
-Acesse http://localhost:3000

@@ -2,12 +2,14 @@ export interface Wallpaper {
   id: number
   title: string
   previewUrl: string
-  tags: string[]        // tags detectadas pelo site
+  tags: string[]        // ai_tags — detectadas pelo Qwen
   steamTags: string[]   // tags originais da Steam
+  userTags: string[]    // tags adicionadas por usuários
   downloads: number
   isAnimated: boolean
   isNsfw: boolean
   authorName: string
+  authorId: string
   steamUrl: string
 }
 

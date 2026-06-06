@@ -93,6 +93,8 @@ export default function Home() {
   const [showNsfwPopup, setShowNsfwPopup] = useState(false)
   const [nsfwPopupCountdown, setNsfwPopupCountdown] = useState(5)
 
+  const nextCursorRef = useRef<string | null>(null)
+  const loadingMoreRef = useRef(false)
   const tagInputRef = useRef<HTMLInputElement>(null)
   const popupCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const colorMenuRef = useRef<HTMLDivElement>(null)
@@ -113,6 +115,7 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!getCookie("lunaris_visited")) setShowWelcome(true)
     if (getCookie("lunaris_nsfw") === "1") setNsfwEnabled(true)
     if (getCookie("lunaris_light") === "1") setLightMode(true)
@@ -138,74 +141,92 @@ export default function Home() {
   const visible = filtered.slice(currentPage * PER_PAGE, (currentPage + 1) * PER_PAGE)
   const pageTagSet = Array.from(new Set(visible.flatMap(w => [...w.tags, ...w.steamTags]))).sort()
 
-  const startFetch = useCallback(async (query: string, sort: SortMode) => {
+  const startFetch = useCallback(async (query: string, sort: SortMode, nsfw: boolean = false) => {
     const session = Date.now()
     sessionRef.current = session
     seenIdsRef.current = new Set()
+    nextCursorRef.current = null
     setLoading(true); setLoadingMore(false); setAllWallpapers([]); setPage(0)
 
     try {
-      // Busca simultânea: Steam API + banco local por tags/título
-      const [steamRes, dbRes] = await Promise.all([
-        fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor: "*", pages: "10" })}`),
-        query ? fetch(`/api/search-db?${new URLSearchParams({ q: query })}`) : Promise.resolve(null),
-      ])
+      let cursor = "*"
+      const collected: Wallpaper[] = []
 
-      if (!steamRes.ok || sessionRef.current !== session) { setLoading(false); return }
+      // Carrega até 200 wallpapers — se nsfwOnly, precisa de 200 nsfw
+      do {
+        const res = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor, pages: "2" })}`)
+        if (!res.ok || sessionRef.current !== session) { setLoading(false); return }
 
-      const steamData = await steamRes.json()
-      const dbData = dbRes?.ok ? await dbRes.json() : { wallpapers: [] }
-
-      // Mescla — banco primeiro (tem tags completas), depois Steam, sem duplicatas
-      const allResults: Wallpaper[] = []
-      const seen = new Set<number>()
-
-      for (const w of (dbData.wallpapers ?? [])) {
-        if (!seen.has(w.id)) { seen.add(w.id); allResults.push(w) }
-      }
-      for (const w of (steamData.wallpapers ?? [])) {
-        if (!seen.has(w.id)) { seen.add(w.id); allResults.push(w) }
-      }
-
-      seenIdsRef.current = seen
-      setAllWallpapers(allResults)
-      setLoading(false)
-
-      let nextCursor: string | null = steamData.nextCursor
-      if (!nextCursor) return
-      setLoadingMore(true)
-
-      while (nextCursor && sessionRef.current === session) {
-        const moreRes: Response = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor: nextCursor, pages: "5" })}`)
-        if (!moreRes.ok || sessionRef.current !== session) break
-        const moreData: { wallpapers?: Wallpaper[]; nextCursor?: string } = await moreRes.json()
-        const moreBatch: Wallpaper[] = (moreData.wallpapers ?? []).filter((w: Wallpaper) => {
-          if (seenIdsRef.current.has(w.id)) return false
-          seenIdsRef.current.add(w.id); return true
+        const data = await res.json()
+        const results: Wallpaper[] = data.wallpapers ?? []
+        results.forEach((w: Wallpaper) => {
+          if (!seenIdsRef.current.has(w.id)) {
+            seenIdsRef.current.add(w.id)
+            collected.push(w)
+          }
         })
-        if (moreBatch.length > 0) setAllWallpapers(prev => [...prev, ...moreBatch])
-        nextCursor = moreData.nextCursor ?? null
-        if (!nextCursor) break
-      }
-      if (sessionRef.current === session) setLoadingMore(false)
+        cursor = data.nextCursor ?? ""
+        nextCursorRef.current = cursor || null
+
+        if (!cursor) break
+
+        if (nsfw) {
+          // nsfwOnly: continua até ter 200 nsfw
+          const nsfwCount = collected.filter(w => w.isNsfw).length
+          if (nsfwCount >= 200) break
+        } else {
+          // Normal: para quando tiver 200 wallpapers no total
+          if (collected.length >= 200) break
+        }
+      } while (cursor && sessionRef.current === session)
+
+      setAllWallpapers(collected)
+      setLoading(false)
     } catch (err) {
       console.error("Erro:", err)
-      if (sessionRef.current === session) { setLoading(false); setLoadingMore(false) }
+      if (sessionRef.current === Date.now()) { setLoading(false); setLoadingMore(false) }
     }
+  }, [])
+
+  // Carrega mais wallpapers ao navegar nas páginas
+  const loadMore = useCallback(async (query: string, sort: SortMode) => {
+    if (loadingMoreRef.current || !nextCursorRef.current) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+
+    try {
+      const res = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor: nextCursorRef.current, pages: "2" })}`)
+      if (!res.ok) { setLoadingMore(false); loadingMoreRef.current = false; return }
+
+      const data = await res.json()
+      const batch: Wallpaper[] = (data.wallpapers ?? []).filter((w: Wallpaper) => {
+        if (seenIdsRef.current.has(w.id)) return false
+        seenIdsRef.current.add(w.id); return true
+      })
+      if (batch.length > 0) setAllWallpapers(prev => [...prev, ...batch])
+      nextCursorRef.current = data.nextCursor ?? null
+    } catch (err) {
+      console.error("Erro ao carregar mais:", err)
+    }
+
+    setLoadingMore(false)
+    loadingMoreRef.current = false
   }, [])
 
   useEffect(() => {
     const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" ")
-    const timer = setTimeout(() => startFetch(fullQuery, sortMode), 400)
+    const timer = setTimeout(() => startFetch(fullQuery, sortMode, nsfwOnly), 400)
     return () => clearTimeout(timer)
-  }, [inputValue, activeTags, sortMode, nsfwEnabled, startFetch])
+  }, [inputValue, activeTags, sortMode, nsfwEnabled, nsfwOnly, startFetch])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(0)
-    // Se cor ou tipo mudaram, rebusca incluindo termo no banco
     const fullQuery = [inputValue, ...activeTags, colorFilter !== "all" ? colorFilter : ""].filter(Boolean).join(" ")
-    if (colorFilter !== "all") startFetch(fullQuery, sortMode)
-  }, [wallType, nsfwOnly, resolution, colorFilter, sortMode, startFetch, inputValue, activeTags])
+    if (colorFilter !== "all") startFetch(fullQuery, sortMode, nsfwOnly)
+  }, [wallType, resolution, colorFilter, sortMode, startFetch, inputValue, activeTags, nsfwOnly])
+
+  // Scroll infinito — carrega mais quando chega no fim da página
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -260,7 +281,15 @@ export default function Home() {
     setShowNsfwPopup(false)
   }
 
-  function goToPage(p: number) { setPage(p); window.scrollTo({ top: 0, behavior: "smooth" }) }
+  function goToPage(p: number) {
+    setPage(p)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    // Carrega mais quando estiver a 2 páginas do fim
+    const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" ")
+    if (p >= totalPages - 2 && nextCursorRef.current) {
+      loadMore(fullQuery, sortMode)
+    }
+  }
 
   function getPageNumbers(): (number | "...")[] {
     if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i)
@@ -294,7 +323,7 @@ export default function Home() {
             </p>
             <ul className="text-sm text-left space-y-2 pl-1" style={{ color: "var(--text-dim)" }}>
               <li>🔍 Busca por nome, personagem ou tag</li>
-              <li>🏷️ Tags automáticas via IA (WD14 + DeepL)</li>
+              <li>🏷️ Tags automáticas via IA (Qwen2)</li>
               <li>🎨 Filtros por tipo, resolução e cor dominante</li>
               <li>🔞 Modo +18 disponível nas configurações</li>
             </ul>
@@ -468,8 +497,8 @@ export default function Home() {
 
         {/* Legenda */}
         <div className="flex items-center gap-3 mb-3 text-xs" style={{ color: "var(--text-dim)" }}>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "rgba(139,92,246,0.6)" }}/>tags do site</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "rgba(56,189,248,0.4)" }}/>tags originais Steam</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "var(--tag-ai-text)", opacity: 0.7 }}/>tags do site</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "var(--tag-steam-text)", opacity: 0.7 }}/>tags originais Steam</span>
         </div>
 
         {/* Tags da página */}
@@ -485,8 +514,7 @@ export default function Home() {
                 style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                 {pageTagSet.map(tag => (
                   <button key={tag} onClick={() => addTag(tag)}
-                    className="text-xs px-2 py-0.5 rounded-full hover:opacity-80"
-                    style={{ background: "var(--accent-glow)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.2)" }}>
+                    className="tag-panel text-xs px-2 py-0.5 rounded-full border hover:opacity-80">
                     {tag}
                   </button>
                 ))}

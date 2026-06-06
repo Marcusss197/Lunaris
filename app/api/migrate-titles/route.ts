@@ -54,7 +54,9 @@ export async function GET() {
     if (error) { console.error("Erro:", error.message); break }
     if (!data || data.length === 0) break
 
-    const toTranslate = data.filter((w: { id: number; title: string; title_original: string }) => hasCJK(w.title))
+    // Só traduz wallpapers onde title == title_original (ainda não traduzido) E tem CJK
+    const toTranslate = data.filter((w) => 
+  w.title === w.title_original && hasCJK(w.title))
 
     if (toTranslate.length > 0) {
       console.log(`  Traduzindo ${toTranslate.length} títulos (offset ${offset})...`)

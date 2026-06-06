@@ -10,18 +10,64 @@
   --accent-glow: rgba(139, 92, 246, 0.15);
   --text-dim: rgba(255, 255, 255, 0.35);
   --text-main: #e2e8f0;
+
+  /* Tags */
+  --tag-ai-bg:        rgba(139, 92, 246, 0.20);
+  --tag-ai-text:      #c4b5fd;
+  --tag-ai-border:    rgba(139, 92, 246, 0.25);
+
+  --tag-user-bg:      rgba(6, 182, 212, 0.18);
+  --tag-user-text:    #67e8f9;
+  --tag-user-border:  rgba(6, 182, 212, 0.25);
+
+  --tag-steam-bg:     rgba(56, 189, 248, 0.10);
+  --tag-steam-text:   rgba(125, 211, 252, 0.75);
+  --tag-steam-border: rgba(56, 189, 248, 0.20);
+
+  /* Botão + e tags clicáveis */
+  --tag-add-bg:       rgba(139, 92, 246, 0.15);
+  --tag-add-text:     #c4b5fd;
+  --tag-add-border:   rgba(139, 92, 246, 0.20);
+
+  /* Painel de tags da página */
+  --tag-panel-bg:     rgba(139, 92, 246, 0.08);
+  --tag-panel-text:   #c4b5fd;
+  --tag-panel-border: rgba(139, 92, 246, 0.15);
 }
 
 [data-theme="light"] {
   --bg-base: #f0eeff;
-  --bg-card: #e6e0ff;
-  --bg-surface: #d8d0f5;
+  --bg-card: #e8e2ff;
+  --bg-surface: #ddd6fe;
   --border: rgba(109, 40, 217, 0.18);
   --border-hover: rgba(109, 40, 217, 0.4);
   --accent: #7c3aed;
-  --accent-glow: rgba(109, 40, 217, 0.1);
+  --accent-glow: rgba(109, 40, 217, 0.12);
   --text-dim: rgba(40, 10, 80, 0.5);
   --text-main: #1e1b4b;
+
+  /* Tags light mode */
+  --tag-ai-bg:        rgba(109, 40, 217, 0.14);
+  --tag-ai-text:      #5b21b6;
+  --tag-ai-border:    rgba(109, 40, 217, 0.30);
+
+  --tag-user-bg:      rgba(8, 145, 178, 0.13);
+  --tag-user-text:    #0e7490;
+  --tag-user-border:  rgba(8, 145, 178, 0.28);
+
+  --tag-steam-bg:     rgba(2, 132, 199, 0.10);
+  --tag-steam-text:   #0369a1;
+  --tag-steam-border: rgba(2, 132, 199, 0.22);
+
+  /* Botão + e tags clicáveis */
+  --tag-add-bg:       rgba(109, 40, 217, 0.12);
+  --tag-add-text:     #6d28d9;
+  --tag-add-border:   rgba(109, 40, 217, 0.25);
+
+  /* Painel de tags da página */
+  --tag-panel-bg:     rgba(109, 40, 217, 0.10);
+  --tag-panel-text:   #5b21b6;
+  --tag-panel-border: rgba(109, 40, 217, 0.20);
 }
 
 html { height: 100%; }
@@ -40,7 +86,33 @@ body {
 
 ::selection { background: rgba(139, 92, 246, 0.35); color: #fff; }
 
-/* Light mode card overrides */
-[data-theme="light"] .wall-card-img { filter: none; }
-[data-theme="light"] .tag-pill-site { background: rgba(109, 40, 217, 0.15); color: #6d28d9; border-color: rgba(109, 40, 217, 0.3); }
-[data-theme="light"] .tag-pill-steam { background: rgba(14, 165, 233, 0.1); color: #0369a1; border-color: rgba(14, 165, 233, 0.25); }
+/* Tags — usam variáveis CSS, funcionam em dark e light */
+.tag-ai {
+  background: var(--tag-ai-bg) !important;
+  color: var(--tag-ai-text) !important;
+  border-color: var(--tag-ai-border) !important;
+}
+.tag-user {
+  background: var(--tag-user-bg) !important;
+  color: var(--tag-user-text) !important;
+  border-color: var(--tag-user-border) !important;
+}
+.tag-steam {
+  background: var(--tag-steam-bg) !important;
+  color: var(--tag-steam-text) !important;
+  border-color: var(--tag-steam-border) !important;
+}
+
+/* Botão + adicionar tag e tags clicáveis do painel */
+.tag-add {
+  background: var(--tag-add-bg) !important;
+  color: var(--tag-add-text) !important;
+  border-color: var(--tag-add-border) !important;
+}
+
+/* Tags clicáveis do painel "Tags nesta página" */
+.tag-panel {
+  background: var(--tag-panel-bg) !important;
+  color: var(--tag-panel-text) !important;
+  border-color: var(--tag-panel-border) !important;
+}

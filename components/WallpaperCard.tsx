@@ -4,6 +4,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Wallpaper } from "@/types/wallpaper"
 import { formatDownloads } from "@/lib/steam"
 
@@ -11,32 +12,80 @@ interface WallpaperCardProps {
   wallpaper: Wallpaper
 }
 
+// 33/33/33 — se um tipo tiver menos, distribui o resto pros outros
+function buildTagDisplay(aiTags: string[], userTags: string[], steamTags: string[]) {
+  const TOTAL = 12
+  const BASE  = Math.floor(TOTAL / 3) // 4 cada
+
+  const seen = new Set<string>()
+  const pick = (tags: string[], max: number) => {
+    const result: string[] = []
+    for (const t of tags) {
+      if (result.length >= max) break
+      if (!seen.has(t)) { seen.add(t); result.push(t) }
+    }
+    return result
+  }
+
+  // Primeira passada — pega até BASE de cada
+  const ai    = pick(aiTags,    BASE)
+  const user  = pick(userTags,  BASE)
+  const steam = pick(steamTags, BASE)
+
+  // Calcula sobra de cada tipo
+  const aiLeft    = Math.max(0, BASE - ai.length)
+  const userLeft  = Math.max(0, BASE - user.length)
+  const steamLeft = Math.max(0, BASE - steam.length)
+  const totalLeft = aiLeft + userLeft + steamLeft
+
+  if (totalLeft === 0) return { ai, user, steam }
+
+  // Distribui slots vagos pros outros tipos
+  const extraAi    = pick(aiTags,    userLeft + steamLeft)
+  const extraUser  = pick(userTags,  aiLeft   + steamLeft)
+  const extraSteam = pick(steamTags, aiLeft   + userLeft)
+
+  return {
+    ai:    [...ai,    ...extraAi],
+    user:  [...user,  ...extraUser],
+    steam: [...steam, ...extraSteam],
+  }
+}
+
 export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
+  const router = useRouter()
   const [showTagInput, setShowTagInput] = useState(false)
-  const [tagInput, setTagInput] = useState("")
-  const [localTags, setLocalTags] = useState<string[]>(wallpaper.tags)
-  const [saving, setSaving] = useState(false)
+  const [tagInput, setTagInput]         = useState("")
+  const [localAiTags, setLocalAiTags]   = useState<string[]>(wallpaper.tags ?? [])
+  const [localUserTags, setLocalUserTags] = useState<string[]>(wallpaper.userTags ?? [])
+  const [saving, setSaving]             = useState(false)
+
+  function goToDetail(e: React.MouseEvent) {
+    e.preventDefault()
+    router.push(`/wallpaper/${wallpaper.id}`)
+  }
 
   async function handleAddTag(e: React.FormEvent) {
     e.preventDefault()
     const clean = tagInput.trim().toLowerCase()
-    if (!clean || localTags.includes(clean)) { setTagInput(""); setShowTagInput(false); return }
+    const allTags = [...localAiTags, ...localUserTags]
+    if (!clean || allTags.includes(clean)) { setTagInput(""); setShowTagInput(false); return }
 
     setSaving(true)
     try {
       const res = await fetch("/api/add-tag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: wallpaper.id, tag: clean }),
+        body: JSON.stringify({ id: wallpaper.id, tag: clean, type: "user" }),
       })
       const data = await res.json()
-      if (data.ok) setLocalTags(data.tags)
+      if (data.ok) setLocalUserTags(data.user_tags ?? [...localUserTags, clean])
     } catch { /* ignora */ }
 
-    setTagInput("")
-    setShowTagInput(false)
-    setSaving(false)
+    setTagInput(""); setShowTagInput(false); setSaving(false)
   }
+
+  const { ai, user, steam } = buildTagDisplay(localAiTags, localUserTags, wallpaper.steamTags ?? [])
 
   return (
     <div
@@ -46,13 +95,13 @@ export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
       onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
     >
       {/* Imagem */}
-      <a href={wallpaper.steamUrl} target="_blank" rel="noopener noreferrer">
-        <div className="relative aspect-video" style={{ background: "var(--bg-surface)" }}>
+      <a href={`/wallpaper/${wallpaper.id}`} onClick={goToDetail}>
+        <div className="relative aspect-video cursor-pointer" style={{ background: "var(--bg-surface)" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={wallpaper.previewUrl}
             alt={wallpaper.title}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
             loading="lazy"
           />
           {wallpaper.isAnimated && (
@@ -61,52 +110,64 @@ export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
           {wallpaper.isNsfw && (
             <span className="absolute top-2 left-2 text-[11px] px-2 py-0.5 rounded-full bg-red-500/80 text-white">+18</span>
           )}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all duration-200 flex items-center justify-center">
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-xs font-medium px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm">
+              Ver detalhes
+            </span>
+          </div>
         </div>
       </a>
 
       {/* Info */}
       <div className="p-3" style={{ background: "var(--bg-card)" }}>
-        <a href={wallpaper.steamUrl} target="_blank" rel="noopener noreferrer">
-          <p className="text-sm font-medium truncate mb-2" style={{ color: "var(--text-main)" }}>
+        <a href={`/wallpaper/${wallpaper.id}`} onClick={goToDetail}>
+          <p className="text-sm font-medium truncate mb-2 hover:underline" style={{ color: "var(--text-main)" }}>
             {wallpaper.title}
           </p>
         </a>
 
-        {/* Tags */}
+        {/* Tags 4/4/4 */}
         <div className="flex flex-wrap gap-1 mb-2">
-          {localTags.slice(0, 6).map(tag => (
-            <span key={`site-${tag}`} className="tag-pill-site text-[11px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/20">
+          {/* IA — roxo */}
+          {ai.map((tag, i) => (
+            <span key={`ai-${i}-${tag}`}
+              className="tag-ai text-[11px] px-2 py-0.5 rounded-full border">
               {tag}
             </span>
           ))}
-          {wallpaper.steamTags.slice(0, 2).map(tag => (
-            <span key={`steam-${tag}`} className="tag-pill-steam text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400/70 border border-sky-500/20">
+          {/* Usuário — ciano */}
+          {user.map((tag, i) => (
+            <span key={`user-${i}-${tag}`}
+              className="tag-user text-[11px] px-2 py-0.5 rounded-full border">
               {tag}
             </span>
           ))}
-          {/* Botão + pra adicionar tag no card */}
+          {/* Steam — azul claro */}
+          {steam.map((tag, i) => (
+            <span key={`steam-${i}-${tag}`}
+              className="tag-steam text-[11px] px-2 py-0.5 rounded-full border">
+              {tag}
+            </span>
+          ))}
+
+          {/* Botão + */}
           {!showTagInput && (
             <button
-              onClick={() => setShowTagInput(true)}
-              className="text-[11px] px-2 py-0.5 rounded-full transition-all hover:opacity-80"
-              style={{ background: "var(--accent-glow)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.2)" }}
-              aria-label="Adicionar tag"
+              onClick={e => { e.stopPropagation(); setShowTagInput(true) }}
+              className="tag-add text-[11px] px-2 py-0.5 rounded-full border transition-all hover:opacity-80"
               title="Adicionar tag"
             >+</button>
           )}
         </div>
 
-        {/* Input de tag inline */}
+        {/* Input de tag */}
         {showTagInput && (
           <form onSubmit={handleAddTag} className="flex gap-1 mb-2">
             <input
-              autoFocus
-              type="text"
-              value={tagInput}
+              autoFocus type="text" value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Escape") { setShowTagInput(false); setTagInput("") } }}
-              placeholder="nova tag..."
-              disabled={saving}
+              placeholder="nova tag..." disabled={saving}
               className="flex-1 text-[11px] px-2 py-0.5 rounded-full outline-none"
               style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-main)" }}
             />
