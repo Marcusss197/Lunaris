@@ -13,6 +13,7 @@ import {
   getWallpapersByIds,
   searchWallpapersInDb,
   upsertWallpapers,
+  insertNewWallpapers,
   toDbWallpaper,
   fromDbWallpaper,
 } from "@/lib/db"
@@ -110,15 +111,16 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// Salva wallpapers novos no banco — tagger vai preencher ai_tags depois
+// Salva wallpapers NOVOS no banco — usa ignoreDuplicates pra não sobrescrever
+// título traduzido ou ai_tags que já existem
 async function indexInBackground(items: { wallpaper: Wallpaper; titleOriginal: string }[]) {
   try {
     const dbItems = items
       .filter(({ wallpaper }) => wallpaper.title && wallpaper.previewUrl)
       .map(({ wallpaper, titleOriginal }) => toDbWallpaper(wallpaper, [], titleOriginal))
 
-    await upsertWallpapers(dbItems)
-    console.log(`✓ Indexados ${dbItems.length} wallpapers`)
+    await insertNewWallpapers(dbItems)
+    console.log(`✓ Indexados ${dbItems.length} wallpapers novos`)
   } catch (err) {
     console.error("Erro ao indexar:", err)
   }

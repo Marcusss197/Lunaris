@@ -80,7 +80,18 @@ export async function searchWallpapersInDb(
   return results.sort((a, b) => b.downloads - a.downloads).slice(0, limit)
 }
 
-// Salva ou atualiza wallpapers no banco (upsert)
+// Salva wallpapers novos — ignora se já existir (preserva título traduzido e tags)
+export async function insertNewWallpapers(wallpapers: DbWallpaper[]): Promise<void> {
+  if (!supabase || wallpapers.length === 0) return
+
+  const { error } = await supabase
+    .from("wallpapers")
+    .upsert(wallpapers, { onConflict: "id", ignoreDuplicates: true })
+
+  if (error) console.error("Erro ao inserir novos:", error.message)
+}
+
+// Salva ou atualiza wallpapers no banco (upsert completo — usa só pro tagger)
 export async function upsertWallpapers(wallpapers: DbWallpaper[]): Promise<void> {
   if (!supabase || wallpapers.length === 0) return
 
