@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     // ── 5. Adiciona resultados do banco que não vieram da Steam ───────────────
     for (const dbItem of dbTextResults) {
-      if (!merged.has(dbItem.id)) {
+      if (!merged.has(dbItem.id) && dbItem.downloads >= 150) {
         merged.set(dbItem.id, fromDbWallpaper(dbItem))
       }
     }

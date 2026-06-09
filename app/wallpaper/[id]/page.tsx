@@ -3,7 +3,7 @@
 
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@supabase/supabase-js"
 
@@ -11,6 +11,8 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+const HOME = "https://lunaris-marcusss.vercel.app"
 
 interface WallpaperDetail {
   id: number
@@ -112,7 +114,6 @@ function DownloadIcon() {
   )
 }
 
-// Seção de tags por categoria
 function TagSection({ title, tags, color }: {
   title: string
   tags: string[]
@@ -134,9 +135,33 @@ function TagSection({ title, tags, color }: {
   )
 }
 
+// Botão Voltar: usa router.back() se tiver histórico, senão vai pro home
+function BackButton() {
+  const router = useRouter()
+
+  function handleBack() {
+    // Se a página foi aberta em nova aba, window.history.length será 1 ou 2 (sem histórico real do site)
+    if (typeof window !== "undefined" && window.history.length <= 2) {
+      window.location.href = HOME
+    } else {
+      router.back()
+    }
+  }
+
+  return (
+    <button onClick={handleBack}
+      className="flex items-center gap-2 text-sm mb-5 hover:opacity-80 transition-opacity"
+      style={{ color: "var(--text-dim)" }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M19 12H5M12 5l-7 7 7 7" />
+      </svg>
+      Voltar
+    </button>
+  )
+}
+
 export default function WallpaperDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
 
   const [wallpaper, setWallpaper]       = useState<WallpaperDetail | null>(null)
   const [loading, setLoading]           = useState(true)
@@ -152,7 +177,6 @@ export default function WallpaperDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    setLoading(true)
     supabase.from("wallpapers").select("*").eq("id", id).single()
       .then(({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return }
@@ -163,15 +187,15 @@ export default function WallpaperDetailPage() {
       })
   }, [id])
 
-  const loadRating = useCallback(async () => {
+  useEffect(() => {
     if (!id) return
-    const res = await fetch(`/api/rate?id=${id}`)
-    const data = await res.json()
-    setRating({ avg: data.avg ?? 0, total: data.total ?? 0 })
-    setMyVote(getRatingCookie(id))
+    fetch(`/api/rate?id=${id}`)
+      .then(res => res.json())
+      .then(data => {
+        setRating({ avg: data.avg ?? 0, total: data.total ?? 0 })
+        setMyVote(getRatingCookie(id))
+      })
   }, [id])
-
-  useEffect(() => { loadRating() }, [loadRating])
 
   async function handleVote(star: number) {
     if (myVote !== null) return
@@ -209,10 +233,7 @@ export default function WallpaperDetailPage() {
   if (notFound || !wallpaper) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: "var(--bg-main)" }}>
       <p className="text-lg" style={{ color: "var(--text-main)" }}>Wallpaper não encontrado TwT</p>
-      <button onClick={() => router.back()} className="text-sm px-4 py-2 rounded-lg"
-        style={{ background: "var(--bg-card)", color: "var(--text-dim)", border: "1px solid var(--border)" }}>
-        ← Voltar
-      </button>
+      <BackButton />
     </div>
   )
 
@@ -225,15 +246,7 @@ export default function WallpaperDetailPage() {
     <div className="min-h-screen" style={{ background: "var(--bg-main)", color: "var(--text-main)" }}>
       <div className="max-w-6xl mx-auto px-4 py-6">
 
-        {/* Voltar */}
-        <button onClick={() => router.back()}
-          className="flex items-center gap-2 text-sm mb-5 hover:opacity-80 transition-opacity"
-          style={{ color: "var(--text-dim)" }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5M12 5l-7 7 7 7" />
-          </svg>
-          Voltar
-        </button>
+        <BackButton />
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
 
@@ -254,7 +267,7 @@ export default function WallpaperDetailPage() {
             </div>
 
             {/* Barra separadora */}
-            <div className="w-full h-[3px]"
+            <div className="w-full h-0.75"
               style={{ background: "linear-gradient(90deg, rgba(139,92,246,0.7) 0%, rgba(99,102,241,0.4) 60%, transparent 100%)" }} />
 
             {/* Título + meta */}

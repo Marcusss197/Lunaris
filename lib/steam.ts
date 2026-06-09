@@ -86,20 +86,23 @@ export async function searchSteamWallpapers(
   return { items: deduped, nextCursor: lastCursor }
 }
 
-// Traduz título com DeepL (só CJK)
-export async function translateTitle(text: string, targetLang: string = "EN-US"): Promise<string> {
-  const apiKey = process.env.DEEPL_API_KEY
+// Traduz título com Google Translate (só CJK)
+export async function translateTitle(text: string): Promise<string> {
+  const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY
   if (!apiKey) return text
   const hasCJK = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(text)
   if (!hasCJK) return text
   try {
-    const res = await fetch("https://api-free.deepl.com/v2/translate", {
-      method: "POST",
-      headers: { Authorization: `DeepL-Auth-Key ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: [text], target_lang: targetLang }),
-    })
+    const res = await fetch(
+      `https://translation.googleapis.com/language/translate/v2?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: text, target: "en", format: "text" }),
+      }
+    )
     const data = await res.json()
-    return data?.translations?.[0]?.text ?? text
+    return data?.data?.translations?.[0]?.translatedText ?? text
   } catch { return text }
 }
 

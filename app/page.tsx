@@ -371,7 +371,7 @@ export default function Home() {
 
         {/* Header / Busca */}
         <div className="flex items-center gap-3 mb-5">
-          <h1 className="text-2xl font-bold whitespace-nowrap tracking-tight" style={{ color: "var(--accent)", textShadow: "0 0 18px rgba(139,92,246,0.6)" }}>Lunaris</h1>
+          <a href="https://lunaris-marcusss.vercel.app" className="text-2xl font-bold whitespace-nowrap tracking-tight hover:opacity-80 transition-opacity" style={{ color: "var(--accent)", textShadow: "0 0 18px rgba(139,92,246,0.6)", textDecoration: "none" }}>Lunaris</a>
           <div className="relative flex-1">
             <div className="flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2 cursor-text min-h-11"
               style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
@@ -559,7 +559,11 @@ export default function Home() {
       <footer style={{ borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-xl font-bold tracking-tight" style={{ color: "var(--accent)", textShadow: "0 0 14px rgba(139,92,246,0.5)" }}>Lunaris</span>
+            <a href="https://lunaris-marcusss.vercel.app"
+              className="text-xl font-bold tracking-tight hover:opacity-80 transition-opacity"
+                style={{ color: "var(--accent)", textShadow: "0 0 14px rgba(139,92,246,0.5)", textDecoration: "none" }}>
+                        Lunaris
+            </a>
             <span style={{ color: "var(--text-dim)", fontSize: "12px" }}>
               Desenvolvido por{" "}
               <a href="https://github.com/Marcusss197" target="_blank" rel="noopener noreferrer"
