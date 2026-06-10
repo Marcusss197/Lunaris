@@ -184,6 +184,7 @@ export default function WallpaperDetailPage() {
         setLocalAiTags(data.ai_tags ?? [])
         setLocalUserTags(data.user_tags ?? [])
         setLoading(false)
+        document.title = `${data.title} — Lunaris`
       })
   }, [id])
 

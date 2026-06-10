@@ -33,18 +33,18 @@ const RESOLUTION_OPTIONS = [
 ]
 
 const COLOR_OPTIONS = [
-  { label: "Todas as cores", value: "all", emoji: "🎨" },
-  { label: "Vermelho", value: "red", emoji: "🔴" },
-  { label: "Laranja", value: "orange", emoji: "🟠" },
-  { label: "Amarelo", value: "yellow", emoji: "🟡" },
-  { label: "Verde", value: "green", emoji: "🟢" },
-  { label: "Azul", value: "blue", emoji: "🔵" },
-  { label: "Roxo", value: "purple", emoji: "🟣" },
-  { label: "Rosa", value: "pink", emoji: "🩷" },
-  { label: "Ciano", value: "cyan", emoji: "🩵" },
-  { label: "Preto", value: "black", emoji: "⚫" },
-  { label: "Branco", value: "white", emoji: "⚪" },
-  { label: "Cinza", value: "gray", emoji: "🩶" },
+  { label: "Todas as cores", value: "all", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"conic-gradient(red,orange,yellow,green,cyan,blue,violet,red)",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Vermelho", value: "red", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#ef4444",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Laranja", value: "orange", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#f97316",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Amarelo", value: "yellow", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#eab308",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Verde", value: "green", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#22c55e",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Azul", value: "blue", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#3b82f6",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Roxo", value: "purple", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#a855f7",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Rosa", value: "pink", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#ec4899",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Ciano", value: "cyan", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#06b6d4",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Preto", value: "black", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#1a1a2e",border:"1px solid rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Branco", value: "white", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#f1f5f9",border:"1px solid rgba(0,0,0,0.1)",display:"inline-block",flexShrink:0}}/></> },
+  { label: "Cinza", value: "gray", emoji: <><span style={{width:"10px",height:"10px",borderRadius:"50%",background:"#94a3b8",display:"inline-block",flexShrink:0}}/></> },
 ]
 
 // Categorias principais de ordenação
@@ -371,12 +371,12 @@ export default function Home() {
 
         {/* Header / Busca */}
         <div className="flex items-center gap-3 mb-5">
-          <a href="https://lunaris-marcusss.vercel.app" className="text-2xl font-bold whitespace-nowrap tracking-tight hover:opacity-80 transition-opacity" style={{ color: "var(--accent)", textShadow: "0 0 18px rgba(139,92,246,0.6)", textDecoration: "none" }}>Lunaris</a>
+          <a href="https://lunaris-marcusss.vercel.app" className="lunaris-logo text-2xl font-bold whitespace-nowrap tracking-tight" style={{ textDecoration: "none" }}>Lunaris</a>
           <div className="relative flex-1">
             <div className="flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2 cursor-text min-h-11"
               style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
               onClick={() => tagInputRef.current?.focus()}>
-              <span className="text-sm" style={{ color: "var(--text-dim)" }}>🔍</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, flexShrink: 0 }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               {activeTags.map(tag => (
                 <span key={tag} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
                   style={{ background: "rgba(139,92,246,0.2)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)" }}>
@@ -387,7 +387,7 @@ export default function Home() {
               <input ref={tagInputRef} type="text" value={inputValue}
                 onChange={e => handleInputChange(e.target.value)}
                 onKeyDown={handleTagKeyDown}
-                placeholder={activeTags.length === 0 ? "buscar wallpapers..." : "adicionar tag..."}
+                placeholder={activeTags.length === 0 ? "Buscar wallpapers..." : "adicionar tag..."}
                 className="flex-1 min-w-30 bg-transparent text-sm outline-none"
                 style={{ color: "var(--text-main)" }} />
             </div>
@@ -434,17 +434,17 @@ export default function Home() {
             <button onClick={() => setSortCategory("popular")}
               className="text-xs px-3 py-1.5 rounded-lg transition-all"
               style={sortCategory === "popular" ? { background: "rgba(139,92,246,0.2)", color: "var(--accent)", border: "1px solid rgba(139,92,246,0.4)" } : { color: "var(--text-dim)", border: "1px solid transparent" }}>
-              🔥 Popular
+              {(() => { const active = sortCategory === "popular"; return <svg width="13" height="13" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"5px",verticalAlign:"-2px"}}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> })()} Popular
             </button>
             <button onClick={() => setSortCategory("recent")}
               className="text-xs px-3 py-1.5 rounded-lg transition-all"
               style={sortCategory === "recent" ? { background: "rgba(139,92,246,0.2)", color: "var(--accent)", border: "1px solid rgba(139,92,246,0.4)" } : { color: "var(--text-dim)", border: "1px solid transparent" }}>
-              🕐 Recentes
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"5px",verticalAlign:"-2px"}}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Recentes
             </button>
             <button onClick={() => setSortCategory("subscribed")}
               className="text-xs px-3 py-1.5 rounded-lg transition-all"
               style={sortCategory === "subscribed" ? { background: "rgba(139,92,246,0.2)", color: "var(--accent)", border: "1px solid rgba(139,92,246,0.4)" } : { color: "var(--text-dim)", border: "1px solid transparent" }}>
-              ⬇️ Mais inscritos
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"5px",verticalAlign:"-2px"}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Mais inscritos
             </button>
           </div>
 
