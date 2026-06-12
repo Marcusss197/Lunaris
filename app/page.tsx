@@ -71,6 +71,8 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [allWallpapers, setAllWallpapers] = useState<Wallpaper[]>([])
   const [loading, setLoading] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const startFetchRef = useRef<((q: string, s: SortMode, n?: boolean, r?: boolean) => void) | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [page, setPage] = useState(0)
 
@@ -139,9 +141,12 @@ export default function Home() {
   const totalPages = Math.ceil(filtered.length / PER_PAGE)
   const currentPage = Math.min(page, Math.max(0, totalPages - 1))
   const visible = filtered.slice(currentPage * PER_PAGE, (currentPage + 1) * PER_PAGE)
-  const pageTagSet = Array.from(new Set(visible.flatMap(w => [...w.tags, ...w.steamTags]))).sort()
+  const pageUserTagSet = Array.from(new Set(visible.flatMap(w => w.userTags ?? []))).sort()
+  const pageAiTagSet = Array.from(new Set(visible.flatMap(w => w.tags))).filter(t => !pageUserTagSet.includes(t)).sort()
+  const pageSteamTagSet = Array.from(new Set(visible.flatMap(w => w.steamTags))).filter(t => !pageAiTagSet.includes(t) && !pageUserTagSet.includes(t)).sort()
+  const pageTagCount = pageAiTagSet.length + pageUserTagSet.length + pageSteamTagSet.length
 
-  const startFetch = useCallback(async (query: string, sort: SortMode, nsfw: boolean = false) => {
+  const startFetch = useCallback(async (query: string, sort: SortMode, nsfw: boolean = false, isRetry: boolean = false) => {
     const session = Date.now()
     sessionRef.current = session
     seenIdsRef.current = new Set()
@@ -180,13 +185,26 @@ export default function Home() {
         }
       } while (cursor && sessionRef.current === session)
 
+      if (collected.length === 0 && !isRetry && sessionRef.current === session) {
+        setRetrying(true)
+        setTimeout(() => {
+          if (sessionRef.current === session) startFetchRef.current?.(query, sort, nsfw, true)
+        }, 1500)
+        return 
+      }
+
+      setRetrying(false)
       setAllWallpapers(collected)
       setLoading(false)
     } catch (err) {
       console.error("Erro:", err)
-      if (sessionRef.current === Date.now()) { setLoading(false); setLoadingMore(false) }
+      if (sessionRef.current === Date.now()) { setLoading(false); setLoadingMore(false); setRetrying(false) }
     }
   }, [])
+
+  useEffect(() => {
+    startFetchRef.current = startFetch
+  }, [startFetch])
 
   // Carrega mais wallpapers ao navegar nas páginas
   const loadMore = useCallback(async (query: string, sort: SortMode) => {
@@ -214,6 +232,8 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true) 
     const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" ")
     const timer = setTimeout(() => startFetch(fullQuery, sortMode, nsfwOnly), 400)
     return () => clearTimeout(timer)
@@ -507,14 +527,26 @@ export default function Home() {
             <button onClick={() => setShowTagsPanel(v => !v)}
               className="text-xs px-3 py-1.5 rounded-lg hover:opacity-80"
               style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>
-              {showTagsPanel ? "▲" : "▼"} Tags nesta página ({pageTagSet.length})
+              {showTagsPanel ? "▲" : "▼"} Tags nesta página ({pageTagCount})
             </button>
             {showTagsPanel && (
               <div className="mt-2 p-3 rounded-xl flex flex-wrap gap-1.5"
                 style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-                {pageTagSet.map(tag => (
-                  <button key={tag} onClick={() => addTag(tag)}
+                {pageAiTagSet.map(tag => (
+                  <button key={`ai-${tag}`} onClick={() => addTag(tag)}
                     className="tag-panel text-xs px-2 py-0.5 rounded-full border hover:opacity-80">
+                    {tag}
+                  </button>
+                ))}
+                {pageUserTagSet.map(tag => (
+                  <button key={`user-${tag}`} onClick={() => addTag(tag)}
+                    className="tag-user text-xs px-2 py-0.5 rounded-full border hover:opacity-80">
+                    {tag}
+                  </button>
+                ))}
+                {pageSteamTagSet.map(tag => (
+                  <button key={`steam-${tag}`} onClick={() => addTag(tag)}
+                    className="tag-steam text-xs px-2 py-0.5 rounded-full border hover:opacity-80">
                     {tag}
                   </button>
                 ))}
@@ -525,7 +557,10 @@ export default function Home() {
 
         {/* Grid */}
         {loading ? (
-          <div className="text-center py-20" style={{ color: "var(--text-dim)" }}>Buscando...</div>
+          <div className="text-center py-20" style={{ color: "var(--text-dim)" }}>
+            <p>Buscando...</p>
+            {retrying && <p className="text-sm mt-2 opacity-70">Iremos tentar novamente :3</p>}
+          </div>
         ) : visible.length === 0 ? (
           <div className="text-center py-20" style={{ color: "var(--text-dim)" }}>Nenhum wallpaper encontrado &gt;&lt;</div>
         ) : (
