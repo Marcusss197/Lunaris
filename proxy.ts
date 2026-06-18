@@ -14,7 +14,7 @@ export function proxy(request: NextRequest) {
   }
 
   // Rotas de API protegidas por DEV_MODE
-  const devOnlyRoutes = ["/api/migrate-titles", "/organize-tags"]
+  const devOnlyRoutes = ["/organize-tags"]
   if (devOnlyRoutes.some(route => pathname.startsWith(route))) {
     const devMode = process.env.DEV_MODE === "true"
     if (!devMode) {
@@ -26,5 +26,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/wallpaper", "/wallpaper/", "/api/migrate-titles/:path*"],
+  matcher: ["/wallpaper", "/wallpaper/", "/organize-tags/:path*"],
 }
