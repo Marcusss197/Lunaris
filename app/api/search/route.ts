@@ -108,7 +108,9 @@ export async function GET(req: NextRequest) {
         if (cached.ai_tags.length === 0) toRetag.push({ wallpaper, titleOriginal, authorAvatar })
       } else {
         merged.set(wallpaper.id, wallpaper)
-        toIndex.push({ wallpaper, titleOriginal, authorAvatar })
+        if (wallpaper.downloads >= 150) {
+          toIndex.push({ wallpaper, titleOriginal, authorAvatar })
+        }
       }
     }
 
