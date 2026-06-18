@@ -5,11 +5,18 @@
 
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
+import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
 )
 
 const HOME = "https://lunaris-marcusss.vercel.app"
@@ -22,6 +29,8 @@ interface WallpaperDetail {
   steam_url: string
   author_name: string
   author_id: string
+  author_avatar: string
+  author_updated_at: string | null
   steam_tags: string[]
   ai_tags: string[]
   user_tags: string[]
@@ -114,6 +123,15 @@ function DownloadIcon() {
   )
 }
 
+function UserIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  )
+}
+
 function TagSection({ title, tags, color }: {
   title: string
   tags: string[]
@@ -185,6 +203,20 @@ export default function WallpaperDetailPage() {
         setLocalUserTags(data.user_tags ?? [])
         setLoading(false)
         document.title = `${data.title} — Lunaris`
+
+        // Cache de autor (nome/avatar): se nunca foi checado ou tem mais de
+        // 7 dias, dispara refresh em background. Não bloqueia o carregamento
+        // atual — só melhora o cache pra próxima visita.
+        const STALE_MS = 7 * 24 * 60 * 60 * 1000
+        const authorId: string = data.author_id ?? ""
+        const updatedAt: string | null = data.author_updated_at ?? null
+        const isStale = !updatedAt || (Date.now() - new Date(updatedAt).getTime()) > STALE_MS
+        if (authorId && authorId !== "unknown" && isStale) {
+          console.log(`[refresh-author] disparando pra author_id=${authorId}`)
+          fetch(`/api/refresh-author?id=${encodeURIComponent(authorId)}`).catch(() => { /* ignora */ })
+        } else {
+          console.log(`[refresh-author] pulando — author_id="${authorId}" isStale=${isStale}`)
+        }
       })
   }, [id])
 
@@ -280,13 +312,12 @@ export default function WallpaperDetailPage() {
               {wallpaper.title_original && wallpaper.title_original !== wallpaper.title && (
                 <p className="text-sm mb-2" style={{ color: "var(--text-dim)" }}>{wallpaper.title_original}</p>
               )}
+              {wallpaper.author_name && (
+                <Link href={`/u/${wallpaper.author_id}`} className="inline-flex items-center gap-1 text-sm mb-2 hover:opacity-80 transition-opacity" style={{ color: "var(--text-dim)" }}>
+                  <UserIcon /> {wallpaper.author_name}
+                </Link>
+              )}
               <div className="flex flex-wrap gap-4 text-sm mt-2" style={{ color: "var(--text-dim)" }}>
-                {wallpaper.author_name && (
-                  <a href={`https://steamcommunity.com/profiles/${wallpaper.author_id}`}
-                    target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-                    👤 {wallpaper.author_name}
-                  </a>
-                )}
                 <span className="flex items-center gap-1">
                   <DownloadIcon /> {formatNumber(wallpaper.downloads)} downloads
                 </span>
@@ -423,14 +454,22 @@ export default function WallpaperDetailPage() {
             {wallpaper.author_name && (
               <div className="rounded-xl p-4" style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }}>
                 <p className="text-xs mb-2 font-medium" style={{ color: "var(--text-dim)" }}>Criado por</p>
-                <a href={`https://steamcommunity.com/profiles/${wallpaper.author_id}`}
-                  target="_blank" rel="noopener noreferrer"
+                <Link href={`/u/${wallpaper.author_id}`}
                   className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold tag-add border">
-                    {wallpaper.author_name[0].toUpperCase()}
-                  </div>
+                  {wallpaper.author_avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={wallpaper.author_avatar}
+                      alt={wallpaper.author_name}
+                      className="w-8 h-8 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold tag-add border">
+                      {wallpaper.author_name[0].toUpperCase()}
+                    </div>
+                  )}
                   <span className="text-sm" style={{ color: "var(--text-main)" }}>{wallpaper.author_name}</span>
-                </a>
+                </Link>
               </div>
             )}
           </div>

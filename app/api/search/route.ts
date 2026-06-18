@@ -6,7 +6,8 @@ import {
   searchSteamWallpapers,
   translateTitle,
   mapSteamItemToWallpaper,
-  detectTagsWithWD14,
+  detectTagsWithQwen,
+  fetchAuthorInfo,
   SortMode,
 } from "@/lib/steam"
 import {
@@ -19,6 +20,24 @@ import {
 } from "@/lib/db"
 import { isDbAvailable } from "@/lib/supabase"
 import { Wallpaper } from "@/types/wallpaper"
+
+const SEARCH_STOPWORDS = new Set([
+  "the","a","an","of","and","or","in","on","at","to","for","with","from",
+  "is","as","this","that","by","de","da","do","das","dos","com","para","em"
+])
+
+function relevanceScore(w: Wallpaper, words: string[]): number {
+  const titleLower = w.title.toLowerCase()
+  const allTags = [...(w.tags ?? []), ...(w.userTags ?? []), ...(w.steamTags ?? [])]
+    .map(t => t.toLowerCase())
+
+  let score = 0
+  for (const word of words) {
+    if (titleLower.includes(word)) score += 100
+    if (allTags.some(t => t.includes(word))) score += 1
+  }
+  return score
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -41,6 +60,23 @@ export async function GET(req: NextRequest) {
       })
     )
 
+    // Preenche nome de exibição + avatar do autor a partir do SteamID64 (item.creator)
+    const authorIds = steamWallpapers.map(({ wallpaper }) => wallpaper.authorId).filter(Boolean)
+    const authorAvatarById = new Map<number, string>()
+    if (authorIds.length > 0) {
+      const authorInfo = await fetchAuthorInfo(authorIds)
+      for (const { wallpaper } of steamWallpapers) {
+        if (wallpaper.authorId) {
+          const info = authorInfo.get(wallpaper.authorId)
+          if (info) {
+            wallpaper.authorName = info.name || wallpaper.authorName
+            wallpaper.authorAvatar = info.avatar || wallpaper.authorAvatar
+            authorAvatarById.set(wallpaper.id, info.avatar)
+          }
+        }
+      }
+    }
+
     // ── 2. Busca no banco pelos IDs da Steam ──────────────────────────────────
     const steamIds = steamWallpapers.map((w) => w.wallpaper.id)
     const dbCache  = isDbAvailable() ? await getWallpapersByIds(steamIds) : new Map()
@@ -52,14 +88,15 @@ export async function GET(req: NextRequest) {
       : []
 
     // ── 4. Merge Steam com dados do banco ─────────────────────────────────────
-    const toIndex: { wallpaper: Wallpaper; titleOriginal: string }[] = []
-    const toRetag: { wallpaper: Wallpaper; titleOriginal: string }[] = []
+    const toIndex: { wallpaper: Wallpaper; titleOriginal: string; authorAvatar: string }[] = []
+    const toRetag: { wallpaper: Wallpaper; titleOriginal: string; authorAvatar: string }[] = []
 
     // Map final: id → Wallpaper (sem duplicatas)
     const merged = new Map<number, Wallpaper>()
 
     for (const { wallpaper, titleOriginal } of steamWallpapers) {
       const cached = dbCache.get(wallpaper.id)
+      const authorAvatar = authorAvatarById.get(wallpaper.id) ?? ""
       if (cached) {
         // Usa dados do banco (título traduzido, tags IA/user)
         // Preview: prefere o da Steam se for mais recente (Steam tem URL fresco)
@@ -68,25 +105,49 @@ export async function GET(req: NextRequest) {
         merged_w.downloads  = wallpaper.downloads  // downloads sempre da Steam
         merged.set(wallpaper.id, merged_w)
 
-        if (cached.ai_tags.length === 0) toRetag.push({ wallpaper, titleOriginal })
+        if (cached.ai_tags.length === 0) toRetag.push({ wallpaper, titleOriginal, authorAvatar })
       } else {
         merged.set(wallpaper.id, wallpaper)
-        toIndex.push({ wallpaper, titleOriginal })
+        toIndex.push({ wallpaper, titleOriginal, authorAvatar })
       }
     }
 
     // ── 5. Adiciona resultados do banco que não vieram da Steam ───────────────
-    for (const dbItem of dbTextResults) {
-      if (!merged.has(dbItem.id) && dbItem.downloads >= 150) {
-        merged.set(dbItem.id, fromDbWallpaper(dbItem))
+    // Pula em sorts "popular_*" (período) — wallpapers do banco não têm info de
+    // trend/período e podem ser muito antigos, quebrando o filtro "Esta Semana" etc.
+    // Recentes/Mais Inscritos não dependem de período, então o banco pode contribuir.
+    const isPeriodSort = sort.startsWith("popular_")
+    if (!isPeriodSort) {
+      for (const dbItem of dbTextResults) {
+        if (!merged.has(dbItem.id) && dbItem.downloads >= 150) {
+          merged.set(dbItem.id, fromDbWallpaper(dbItem))
+        }
       }
     }
 
     // ── 6. Filtra e ordena ────────────────────────────────────────────────────
     const allMerged = Array.from(merged.values()).filter(w => w.previewUrl && w.downloads >= 150)
-    const finalWallpapers = sort === "recent"
-      ? allMerged
-      : allMerged.sort((a, b) => b.downloads - a.downloads)
+
+    const searchWords = query.trim().toLowerCase().split(/\s+/).filter(w => w.length >= 2 && !SEARCH_STOPWORDS.has(w))
+
+    let finalWallpapers: Wallpaper[]
+    if (searchWords.length > 0) {
+      // Com busca: relevância (match no título pesa muito mais que tags) primeiro.
+      // Desempate mantém a ORDEM ORIGINAL (que já reflete o sort/período escolhido:
+      // Recentes, Esta Semana, Mais Inscritos etc) — em vez de downloads totais.
+      finalWallpapers = allMerged
+        .map((w, i) => ({ w, i }))
+        .sort((a, b) => {
+          const scoreDiff = relevanceScore(b.w, searchWords) - relevanceScore(a.w, searchWords)
+          if (scoreDiff !== 0) return scoreDiff
+          return a.i - b.i
+        })
+        .map(x => x.w)
+    } else {
+      finalWallpapers = sort === "recent"
+        ? allMerged
+        : allMerged.sort((a, b) => b.downloads - a.downloads)
+    }
 
     // ── 7. Background jobs ────────────────────────────────────────────────────
     if (toIndex.length > 0 && isDbAvailable()) indexInBackground(toIndex)
@@ -113,11 +174,11 @@ export async function GET(req: NextRequest) {
 
 // Salva wallpapers NOVOS no banco — usa ignoreDuplicates pra não sobrescrever
 // título traduzido ou ai_tags que já existem
-async function indexInBackground(items: { wallpaper: Wallpaper; titleOriginal: string }[]) {
+async function indexInBackground(items: { wallpaper: Wallpaper; titleOriginal: string; authorAvatar: string }[]) {
   try {
     const dbItems = items
       .filter(({ wallpaper }) => wallpaper.title && wallpaper.previewUrl)
-      .map(({ wallpaper, titleOriginal }) => toDbWallpaper(wallpaper, [], titleOriginal))
+      .map(({ wallpaper, titleOriginal, authorAvatar }) => toDbWallpaper(wallpaper, [], titleOriginal, authorAvatar))
 
     await insertNewWallpapers(dbItems)
     console.log(`✓ Indexados ${dbItems.length} wallpapers novos`)
@@ -131,6 +192,7 @@ async function indexInBackground(items: { wallpaper: Wallpaper; titleOriginal: s
 interface TagJob {
   wallpaper: Wallpaper
   titleOriginal: string
+  authorAvatar: string
   priority: 1 | 2
 }
 
@@ -139,7 +201,7 @@ const _taggingInProgress = new Set<number>()
 let _workerRunning = false
 let _highPriorityCount = 0  // quantos jobs 🔥 ainda estão pendentes ou em processo
 
-function enqueueTagJob(items: { wallpaper: Wallpaper; titleOriginal: string }[], priority: 1 | 2) {
+function enqueueTagJob(items: { wallpaper: Wallpaper; titleOriginal: string; authorAvatar: string }[], priority: 1 | 2) {
   for (const item of items) {
     const id = item.wallpaper.id
     if (_taggingInProgress.has(id)) continue
@@ -173,15 +235,26 @@ async function startWorker() {
 
     _taggingInProgress.add(job.wallpaper.id)
     try {
-      const aiTags = await detectTagsWithWD14(job.wallpaper.previewUrl, job.wallpaper.title)
+      const { tags: aiTags, nsfw, reviewFlags } = await detectTagsWithQwen(job.wallpaper.previewUrl, job.wallpaper.title)
       if (aiTags.length > 0) {
         const dbCache = await getWallpapersByIds([job.wallpaper.id])
         const existing = dbCache.get(job.wallpaper.id)
-        const base = existing ?? toDbWallpaper(job.wallpaper, [], job.titleOriginal)
-        await upsertWallpapers([{ ...base, ai_tags: aiTags }])
+        const base = existing ?? toDbWallpaper(job.wallpaper, [], job.titleOriginal, job.authorAvatar)
+        await upsertWallpapers([{
+          ...base,
+          ai_tags: aiTags,
+          is_nsfw: base.is_nsfw || nsfw, // nunca "rebaixa" um NSFW já marcado pela Steam
+          tagged_at: new Date().toISOString(),
+          review_flags: reviewFlags,
+          // backfill: se o banco não tinha autor salvo mas a Steam retornou agora, preenche
+          author_id: base.author_id || job.wallpaper.authorId,
+          author_name: base.author_name || job.wallpaper.authorName,
+          author_avatar: base.author_avatar || job.authorAvatar,
+        }])
         const pLabel = job.priority === 1 ? "🔥" : "💤"
         const remaining = job.priority === 1 ? ` (${_highPriorityCount - 1} 🔥 restantes)` : ""
-        console.log(`  ${pLabel} [${job.wallpaper.id}] "${job.wallpaper.title.slice(0, 35)}" → ${aiTags.slice(0, 5).join(", ")}...${remaining}`)
+        const flagNote = reviewFlags.length > 0 ? ` ⚠ revisar: ${reviewFlags.join(", ")}` : ""
+        console.log(`  ${pLabel} [${job.wallpaper.id}] "${job.wallpaper.title.slice(0, 35)}" → ${aiTags.slice(0, 5).join(", ")}...${remaining}${flagNote}`)
       }
     } catch { /* ignora */ } finally {
       _taggingInProgress.delete(job.wallpaper.id)

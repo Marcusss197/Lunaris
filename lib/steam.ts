@@ -106,10 +106,19 @@ export async function translateTitle(text: string): Promise<string> {
   } catch { return text }
 }
 
-// Detecta tags via servidor local Qwen (lunaris-tagger/tagger_server.py)
-export async function detectTagsWithWD14(previewUrl: string, title: string = ""): Promise<string[]> {
+// Detecta tags + nsfw + avisos de revisão via servidor local Qwen
+// (lunaris-tagger/tagger_server.py)
+export interface QwenTagResult {
+  tags: string[]
+  nsfw: boolean
+  reviewFlags: string[]
+}
+
+export async function detectTagsWithQwen(previewUrl: string, title: string = ""): Promise<QwenTagResult> {
+  const empty: QwenTagResult = { tags: [], nsfw: false, reviewFlags: [] }
+
   // Modo dev: desabilita o tagger sem logar erro
-  if (process.env.TAGGER_ENABLED !== "true") return []
+  if (process.env.TAGGER_ENABLED !== "true") return empty
 
   try {
     const controller = new AbortController()
@@ -123,16 +132,26 @@ export async function detectTagsWithWD14(previewUrl: string, title: string = "")
     })
     clearTimeout(timeout)
 
-    if (!res.ok) return []
+    if (!res.ok) return empty
 
-    const data: { tags?: string[]; nsfw?: boolean; error?: string } = await res.json()
-    if (data.error) { console.warn("Tagger:", data.error); return [] }
+    const data: { tags?: string[]; nsfw?: boolean; review_flags?: string[]; error?: string } = await res.json()
+    if (data.error) { console.warn("Tagger:", data.error); return empty }
 
-    return data.tags ?? []
+    return {
+      tags: data.tags ?? [],
+      nsfw: data.nsfw ?? false,
+      reviewFlags: data.review_flags ?? [],
+    }
   } catch (e) {
     console.warn("Tagger indisponível:", e)
-    return []
+    return empty
   }
+}
+
+/** @deprecated use detectTagsWithQwen — mantido só pra não quebrar chamadas antigas */
+export async function detectTagsWithWD14(previewUrl: string, title: string = ""): Promise<string[]> {
+  const { tags } = await detectTagsWithQwen(previewUrl, title)
+  return tags
 }
 
 // Detecta NSFW via servidor local
@@ -187,10 +206,57 @@ export function mapSteamItemToWallpaper(item: SteamWorkshopItem): Wallpaper {
     downloads: item.subscriptions ?? 0,
     isAnimated: tags.includes("animated"),
     isNsfw,
-    authorName: "",
-    authorId: "",
+    authorName: "", // preenchido depois via fetchAuthorInfo (precisa do creator)
+    authorId: item.creator ?? "",
+    authorAvatar: "", // preenchido depois via fetchAuthorInfo
     steamUrl: `https://steamcommunity.com/sharedfiles/filedetails/?id=${item.publishedfileid}`,
   }
+}
+
+// Busca nome de exibição (personaname) + foto de perfil (avatarfull) via SteamID64.
+// A QueryFiles já retorna o "creator" (SteamID64) de cada item, mas não esses dados —
+// isso exige uma chamada separada à ISteamUser/GetPlayerSummaries (até 100 IDs por vez).
+export interface AuthorInfo {
+  name: string
+  avatar: string
+}
+
+export async function fetchAuthorInfo(steamIds: string[]): Promise<Map<string, AuthorInfo>> {
+  const result = new Map<string, AuthorInfo>()
+
+  const apiKey = process.env.STEAM_API_KEY
+  if (!apiKey) return result
+
+  const uniqueIds = Array.from(new Set(steamIds.filter(Boolean)))
+  if (uniqueIds.length === 0) return result
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const batch = uniqueIds.slice(i, i + 100)
+    const params = new URLSearchParams({ key: apiKey, steamids: batch.join(",") })
+
+    try {
+      const res = await fetch(`${STEAM_API_BASE}/ISteamUser/GetPlayerSummaries/v2/?${params}`)
+      if (!res.ok) continue
+
+      const data = await res.json()
+      const players: { steamid: string; personaname?: string; avatarfull?: string }[] = data?.response?.players ?? []
+      for (const p of players) {
+        result.set(p.steamid, { name: p.personaname ?? "", avatar: p.avatarfull ?? "" })
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar info de autores:", e)
+    }
+  }
+
+  return result
+}
+
+/** @deprecated use fetchAuthorInfo — mantido só pra não quebrar chamadas antigas */
+export async function fetchAuthorNames(steamIds: string[]): Promise<Map<string, string>> {
+  const info = await fetchAuthorInfo(steamIds)
+  const result = new Map<string, string>()
+  for (const [id, { name }] of info) result.set(id, name)
+  return result
 }
 
 export function formatDownloads(n: number): string {

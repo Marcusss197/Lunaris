@@ -10,7 +10,7 @@ A Steam não tem filtros decentes. Títulos com kanji dificultam ao buscar por w
 
 - 🔍 Busca por Titulo ou Tag
 - 🏷️ Filtros diversos (Scene, Vídeo, Aplicativo, Resoluções, Cores, etc)
-- 🤖 Tradução automática de títulos via DeepL
+- 🤖 Tradução automática de títulos via DeepL + Cloud Translation API
 - 🎨 Tags automáticas via Qwen2 (Ollama)
 - 🔞 Modo +18 com confirmação de idade
 - 💾 Banco de dados via Supabase
@@ -20,6 +20,6 @@ A Steam não tem filtros decentes. Títulos com kanji dificultam ao buscar por w
 
 - **Frontend/Backend**: Next.js 14 + React + TypeScript + Tailwind CSS
 - **Banco de dados**: Supabase (PostgreSQL)
-- **APIs**: Steam Workshop API, DeepL
+- **APIs**: Steam Workshop API, DeepL e Cloud Translation API
 - **IA**: Qwen2 (Ollama)
 

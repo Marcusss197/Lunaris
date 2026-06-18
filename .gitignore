@@ -43,3 +43,8 @@ next-env.d.ts
 # scripts
 migrate_titles.py
 migrate_progress.txt
+backfill_author_avatars.py
+index_authors.py
+supabase-schema.sql
+discard.py
+delete_from_list.py

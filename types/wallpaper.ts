@@ -10,6 +10,7 @@ export interface Wallpaper {
   isNsfw: boolean
   authorName: string
   authorId: string
+  authorAvatar: string
   steamUrl: string
 }
 
@@ -28,4 +29,6 @@ export interface SteamWorkshopItem {
   creator_appid: number
   maybe_inappropriate_sex: boolean
   maybe_inappropriate_violence: boolean
+  time_created?: number
+  creator?: string
 }

@@ -74,11 +74,14 @@ export default function Home() {
   const [retrying, setRetrying] = useState(false)
   const startFetchRef = useRef<((q: string, s: SortMode, n?: boolean, r?: boolean) => void) | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [showLoadMoreRetry, setShowLoadMoreRetry] = useState(false)
+  const [showInfoPopup, setShowInfoPopup] = useState(false)
   const [page, setPage] = useState(0)
 
   // Sort: categoria + período
   const [sortCategory, setSortCategory] = useState<SortCategory>("popular")
   const [popularPeriod, setPopularPeriod] = useState<SortMode>("popular_month")
+  const periodManuallySet = useRef(false)
 
   const [wallType, setWallType] = useState<WallpaperType>("all")
   const [resolution, setResolution] = useState("all")
@@ -147,7 +150,7 @@ export default function Home() {
   const pageTagCount = pageAiTagSet.length + pageUserTagSet.length + pageSteamTagSet.length
 
   const startFetch = useCallback(async (query: string, sort: SortMode, nsfw: boolean = false, isRetry: boolean = false) => {
-    const session = Date.now()
+    const session = Date.now() + Math.random() // evita colisão se duas chamadas no mesmo ms
     sessionRef.current = session
     seenIdsRef.current = new Set()
     nextCursorRef.current = null
@@ -160,9 +163,12 @@ export default function Home() {
       // Carrega até 200 wallpapers — se nsfwOnly, precisa de 200 nsfw
       do {
         const res = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor, pages: "2" })}`)
-        if (!res.ok || sessionRef.current !== session) { setLoading(false); return }
+        if (sessionRef.current !== session) return // sessão obsoleta — ignora silenciosamente
+        if (!res.ok) { setLoading(false); return }
 
         const data = await res.json()
+        if (sessionRef.current !== session) return
+
         const results: Wallpaper[] = data.wallpapers ?? []
         results.forEach((w: Wallpaper) => {
           if (!seenIdsRef.current.has(w.id)) {
@@ -185,12 +191,14 @@ export default function Home() {
         }
       } while (cursor && sessionRef.current === session)
 
-      if (collected.length === 0 && !isRetry && sessionRef.current === session) {
+      if (sessionRef.current !== session) return // outra busca assumiu — não sobrescreve a UI
+
+      if (collected.length === 0 && !isRetry) {
         setRetrying(true)
         setTimeout(() => {
           if (sessionRef.current === session) startFetchRef.current?.(query, sort, nsfw, true)
         }, 1500)
-        return 
+        return // loading continua true
       }
 
       setRetrying(false)
@@ -198,7 +206,7 @@ export default function Home() {
       setLoading(false)
     } catch (err) {
       console.error("Erro:", err)
-      if (sessionRef.current === Date.now()) { setLoading(false); setLoadingMore(false); setRetrying(false) }
+      if (sessionRef.current === session) { setLoading(false); setLoadingMore(false); setRetrying(false) }
     }
   }, [])
 
@@ -207,33 +215,56 @@ export default function Home() {
   }, [startFetch])
 
   // Carrega mais wallpapers ao navegar nas páginas
+  const MAX_LOADMORE_ATTEMPTS = 5
+  const LOADMORE_RETRY_DELAY = 15_000 // 15s entre tentativas
+
   const loadMore = useCallback(async (query: string, sort: SortMode) => {
     if (loadingMoreRef.current || !nextCursorRef.current) return
     loadingMoreRef.current = true
     setLoadingMore(true)
+    setShowLoadMoreRetry(false)
 
-    try {
-      const res = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor: nextCursorRef.current, pages: "2" })}`)
-      if (!res.ok) { setLoadingMore(false); loadingMoreRef.current = false; return }
+    // Com período (popular_week etc) + busca, vários cursors seguidos podem vir
+    // vazios após o filtro de data. Tenta algumas vezes (com espera entre elas)
+    // até achar conteúdo ou o cursor acabar. Se todas falharem, mostra botão manual.
+    for (let attempt = 0; attempt < MAX_LOADMORE_ATTEMPTS; attempt++) {
+      if (!nextCursorRef.current) break
+      try {
+        const res: Response = await fetch(`/api/search?${new URLSearchParams({ q: query, sort, cursor: nextCursorRef.current, pages: "2" })}`)
+        if (!res.ok) break
 
-      const data = await res.json()
-      const batch: Wallpaper[] = (data.wallpapers ?? []).filter((w: Wallpaper) => {
-        if (seenIdsRef.current.has(w.id)) return false
-        seenIdsRef.current.add(w.id); return true
-      })
-      if (batch.length > 0) setAllWallpapers(prev => [...prev, ...batch])
-      nextCursorRef.current = data.nextCursor ?? null
-    } catch (err) {
-      console.error("Erro ao carregar mais:", err)
+        const data: { wallpapers?: Wallpaper[]; nextCursor?: string | null } = await res.json()
+        const batch: Wallpaper[] = (data.wallpapers ?? []).filter((w: Wallpaper) => {
+          if (seenIdsRef.current.has(w.id)) return false
+          seenIdsRef.current.add(w.id); return true
+        })
+        nextCursorRef.current = data.nextCursor ?? null
+
+        if (batch.length > 0) {
+          setAllWallpapers(prev => [...prev, ...batch])
+          setLoadingMore(false)
+          loadingMoreRef.current = false
+          return
+        }
+        // batch vazio: espera antes do próximo cursor (exceto na última tentativa)
+        if (attempt < MAX_LOADMORE_ATTEMPTS - 1 && nextCursorRef.current) {
+          await new Promise(r => setTimeout(r, LOADMORE_RETRY_DELAY))
+        }
+      } catch (err) {
+        console.error("Erro ao carregar mais:", err)
+        break
+      }
     }
 
+    // Todas as tentativas falharam — mostra botão manual se ainda houver cursor
+    if (nextCursorRef.current) setShowLoadMoreRetry(true)
     setLoadingMore(false)
     loadingMoreRef.current = false
   }, [])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true) 
+    setLoading(true) // evita "Nenhum wallpaper encontrado" piscar durante o debounce
     const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" ")
     const timer = setTimeout(() => startFetch(fullQuery, sortMode, nsfwOnly), 400)
     return () => clearTimeout(timer)
@@ -498,6 +529,13 @@ export default function Home() {
                 <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
               </svg>
             )}
+            {showLoadMoreRetry && !loadingMore && (
+              <button
+                onClick={() => { const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" "); loadMore(fullQuery, sortMode) }}
+                className="text-xs px-2 py-1 rounded-lg tag-add border hover:opacity-80">
+                Tentar carregar mais
+              </button>
+            )}
             {filtered.length > 0 && <span>{filtered.length} wallpapers</span>}
           </div>
         </div>
@@ -506,7 +544,7 @@ export default function Home() {
         {sortCategory === "popular" && (
           <div className="flex items-center gap-1 mb-4 flex-wrap">
             {POPULAR_PERIODS.map(opt => (
-              <button key={opt.value} onClick={() => setPopularPeriod(opt.value)}
+              <button key={opt.value} onClick={() => { periodManuallySet.current = true; setPopularPeriod(opt.value) }}
                 className="text-xs px-3 py-1.5 rounded-lg transition-all"
                 style={popularPeriod === opt.value ? pillStyle(true) : { background: "var(--bg-surface)", color: "var(--text-dim)", border: "1px solid var(--border)" }}>
                 {opt.label}
@@ -562,7 +600,15 @@ export default function Home() {
             {retrying && <p className="text-sm mt-2 opacity-70">Iremos tentar novamente :3</p>}
           </div>
         ) : visible.length === 0 ? (
-          <div className="text-center py-20" style={{ color: "var(--text-dim)" }}>Nenhum wallpaper encontrado &gt;&lt;</div>
+          <div className="text-center py-20" style={{ color: "var(--text-dim)" }}>
+            <p>Nenhum wallpaper encontrado &gt;&lt;</p>
+            <button
+              onClick={() => { const fullQuery = [inputValue, ...activeTags].filter(Boolean).join(" "); startFetchRef.current?.(fullQuery, sortMode, nsfwOnly) }}
+              className="text-xs px-3 py-1.5 rounded-lg mt-3 hover:opacity-70 transition-opacity"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>
+              Tentar de novo
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {visible.map(w => <WallpaperCard key={w.id} wallpaper={w} />)}
@@ -599,11 +645,69 @@ export default function Home() {
                 style={{ color: "var(--accent)", textShadow: "0 0 14px rgba(139,92,246,0.5)", textDecoration: "none" }}>
                         Lunaris
             </a>
-            <span style={{ color: "var(--text-dim)", fontSize: "12px" }}>
+            <span style={{ color: "var(--text-dim)", fontSize: "12px" }} className="flex items-center gap-1.5">
               Desenvolvido por{" "}
               <a href="https://github.com/Marcusss197" target="_blank" rel="noopener noreferrer"
                 className="hover:opacity-80" style={{ color: "#c4b5fd" }}>Marcusss</a>
+              <button onClick={() => setShowInfoPopup(true)} aria-label="Sobre o Lunaris"
+                className="flex items-center justify-center hover:scale-110 transition-transform"
+                style={{ width: "17px", height: "17px", color: "#f5f3ff" }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <circle cx="12" cy="7.5" r="0.6" fill="currentColor"/>
+                  <path d="M10.5 11h1.8c.5 0 .8.4.7.9l-1 5.1c-.1.5.2.9.7.9h.3"/>
+                </svg>
+              </button>
             </span>
+
+            {showInfoPopup && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                style={{ background: "rgba(0,0,0,0.6)" }}
+                onClick={() => setShowInfoPopup(false)}>
+                <div onClick={(e) => e.stopPropagation()}
+                  className="max-w-lg w-full rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="lunaris-logo text-xl font-bold">Sobre o Lunaris</h2>
+                    <button onClick={() => setShowInfoPopup(false)} className="hover:opacity-70" style={{ color: "var(--text-dim)" }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4 text-sm" style={{ color: "var(--text-main)" }}>
+                    <div>
+                      <p className="font-semibold mb-1" style={{ color: "var(--accent)" }}>O problema</p>
+                      <p style={{ color: "var(--text-dim)" }}>
+                        A busca da Steam Workshop pra Wallpaper Engine é limitada — títulos em outros idiomas (chinês, japonês, coreano) não aparecem em buscas em português/inglês, e não há filtro por cor dominante ou tags inteligentes baseadas no conteúdo visual.
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="lunaris-logo text-xl font-bold" style={{ color: "var(--accent)", fontSize: "14px" }}>A solução</p>
+                      <p style={{ color: "var(--text-dim)" }}>
+                        Lunaris indexa wallpapers da Steam, traduz títulos automaticamente (Cloud Translation API) e usa um modelo de visão local (Qwen2.5-VL via Ollama) pra gerar tags de conteúdo, cores dominantes e classificação SFW/NSFW — tudo pra facilitar achar exatamente o wallpaper que você quer.
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold mb-1" style={{ color: "var(--accent)" }}>Como foi feito</p>
+                      <p style={{ color: "var(--text-dim)" }}>
+                        Next.js 14 + TypeScript + Tailwind no frontend, Supabase (PostgreSQL) como banco, API da Steam pra indexação, e um servidor Python (FastAPI) local com Qwen2.5-VL pra tagging por IA.
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold mb-1" style={{ color: "var(--accent)" }}>Sobre o projeto</p>
+                      <p style={{ color: "var(--text-dim)" }}>
+                        Feito de usuário para usuário — sem anúncios e sem burocracia. Um projeto pessoal pra resolver um problema real e, no processo, enriquecer meu portfólio como desenvolvedor :3
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="relative" ref={settingsRef}>
             <button onClick={() => setShowSettings(v => !v)} className="p-2 rounded-lg hover:opacity-70"
