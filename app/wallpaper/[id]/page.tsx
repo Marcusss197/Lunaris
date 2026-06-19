@@ -178,6 +178,106 @@ function BackButton() {
   )
 }
 
+function TagSuggestedToast({ pending, alreadyExists, onClose }: {
+  pending: boolean
+  alreadyExists: boolean
+  onClose: () => void
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(10)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSecondsLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (secondsLeft === 0) onClose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secondsLeft])
+
+  let message: string
+  if (alreadyExists) {
+    message = pending
+      ? "Essa tag já foi sugerida e está aguardando aprovação."
+      : "Essa tag já existe nesse wallpaper."
+  } else if (pending) {
+    message = "Tag sugerida! Ela vai passar por uma revisão antes de aparecer publicamente."
+  } else {
+    message = "Tag adicionada!"
+  }
+
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-50 max-w-xs rounded-xl p-4 shadow-lg flex items-start gap-3"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+    >
+      <span className="text-lg leading-none">{pending ? "🕐" : "✓"}</span>
+      <div className="flex-1">
+        <p className="text-sm" style={{ color: "var(--text-main)" }}>{message}</p>
+        <p className="text-[11px] mt-1" style={{ color: "var(--text-dim)" }}>Fechando em {secondsLeft}s</p>
+      </div>
+      <button onClick={onClose} className="text-xs hover:opacity-70" style={{ color: "var(--text-dim)" }}>×</button>
+    </div>
+  )
+}
+
+function MalwareWarningPopup({ onClose }: { onClose: () => void }) {
+  const [secondsLeft, setSecondsLeft] = useState(5)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSecondsLeft(prev => (prev <= 1 ? 0 : prev - 1))
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const canClose = secondsLeft === 0
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.7)" }}
+    >
+      <div
+        className="rounded-2xl p-7 max-w-md w-full"
+        style={{ background: "var(--bg-card)", border: "1px solid rgba(239,68,68,0.4)" }}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-3xl leading-none">⚠️</span>
+          <div>
+            <h3 className="text-base font-semibold" style={{ color: "var(--text-main)" }}>
+              Wallpaper com aplicativo
+            </h3>
+          </div>
+        </div>
+        <p className="text-sm leading-relaxed mb-5" style={{ color: "var(--text-dim)" }}>
+          Esse wallpaper é do tipo <strong style={{ color: "var(--text-main)" }}>Application</strong> e
+          pode incluir arquivos executáveis. A Steam Workshop já foi usada por usuários mal-intencionados 
+          pra distribuir <strong style={{ color: "#990F0F" }}>malware</strong> através de wallpapers para o Wallpaper Engine. Baixe
+          apenas se confiar na fonte e mantenha seu antivírus atualizado.
+        </p>
+        <button
+          onClick={canClose ? onClose : undefined}
+          disabled={!canClose}
+          className="w-full text-sm py-2.5 rounded-lg font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:opacity-90"
+          style={{ background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.4)" }}
+        >
+          {canClose ? "Entendi" : `Aguarde ${secondsLeft}s`}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function WallpaperDetailPage() {
   const { id } = useParams<{ id: string }>()
 
@@ -192,6 +292,8 @@ export default function WallpaperDetailPage() {
   const [localAiTags, setLocalAiTags]   = useState<string[]>([])
   const [localUserTags, setLocalUserTags] = useState<string[]>([])
   const [saving, setSaving]             = useState(false)
+  const [tagToast, setTagToast] = useState<{ pending: boolean; alreadyExists: boolean } | null>(null)
+  const [showMalwareWarning, setShowMalwareWarning] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -204,9 +306,6 @@ export default function WallpaperDetailPage() {
         setLoading(false)
         document.title = `${data.title} — Lunaris`
 
-        // Cache de autor (nome/avatar): se nunca foi checado ou tem mais de
-        // 7 dias, dispara refresh em background. Não bloqueia o carregamento
-        // atual — só melhora o cache pra próxima visita.
         const STALE_MS = 7 * 24 * 60 * 60 * 1000
         const authorId: string = data.author_id ?? ""
         const updatedAt: string | null = data.author_updated_at ?? null
@@ -219,6 +318,16 @@ export default function WallpaperDetailPage() {
         }
       })
   }, [id])
+
+  useEffect(() => {
+    if (!wallpaper) return
+    const tags = wallpaper.steam_tags ?? []
+    const isApp = tags.includes("Application")
+    if (isApp) {
+      const t = setTimeout(() => setShowMalwareWarning(true), 1000)
+      return () => clearTimeout(t)
+    }
+  }, [wallpaper])
 
   useEffect(() => {
     if (!id) return
@@ -252,7 +361,16 @@ export default function WallpaperDetailPage() {
         body: JSON.stringify({ id: Number(id), tag: clean, type: "user" }),
       })
       const data = await res.json()
-      if (data.ok) setLocalUserTags(data.user_tags ?? [...localUserTags, clean])
+      if (data.ok) {
+        // pending=true (produção): a tag NÃO entra em user_tags ainda, só
+        // depois de aprovada em /organize-tags — não atualiza localUserTags
+        // pra não mostrar a tag como já visível antes da hora.
+        // pending=false (DEV_MODE ou já existente aprovada): atualiza normal.
+        if (!data.pending) {
+          setLocalUserTags(data.user_tags ?? [...localUserTags, clean])
+        }
+        setTagToast({ pending: !!data.pending, alreadyExists: !!data.already_exists })
+      }
     } catch { /* ignora */ }
     setTagInput(""); setShowTagInput(false); setSaving(false)
   }
@@ -347,19 +465,18 @@ export default function WallpaperDetailPage() {
                   </span>
                 </div>
 
-                {/* Adicionar tag */}
                 {!showTagInput ? (
                   <button onClick={() => setShowTagInput(true)}
                     className="text-xs py-1.5 px-3 rounded-lg transition-all hover:opacity-80"
                     style={{ background: "var(--bg-surface)", color: "var(--text-dim)", border: "1px dashed var(--border)" }}>
-                    + Adicionar tag
+                    + Sugerir tag
                   </button>
                 ) : (
                   <form onSubmit={handleAddTag} className="flex gap-1">
                     <input autoFocus type="text" value={tagInput}
                       onChange={e => setTagInput(e.target.value)}
                       onKeyDown={e => { if (e.key === "Escape") { setShowTagInput(false); setTagInput("") } }}
-                      placeholder="nova tag (vai como tag de usuário)..." disabled={saving}
+                      placeholder="sugerir tag (passa por revisão)..." disabled={saving}
                       className="flex-1 text-xs px-3 py-1.5 rounded-lg outline-none"
                       style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-main)" }} />
                     <button type="submit" disabled={saving} className="tag-add text-xs px-3 py-1.5 rounded-lg border">
@@ -476,6 +593,18 @@ export default function WallpaperDetailPage() {
 
         </div>
       </div>
+
+      {tagToast && (
+        <TagSuggestedToast
+          pending={tagToast.pending}
+          alreadyExists={tagToast.alreadyExists}
+          onClose={() => setTagToast(null)}
+        />
+      )}
+
+      {showMalwareWarning && (
+        <MalwareWarningPopup onClose={() => setShowMalwareWarning(false)} />
+      )}
     </div>
   )
 }

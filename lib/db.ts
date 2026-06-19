@@ -124,13 +124,14 @@ export async function searchWallpapersForOrganize(
     onlyFlagged?: boolean
     nsfwOnly?: boolean
     withTagsOnly?: boolean
+    pendingOnly?: boolean
     excludeTags?: string[]
     sortBy?: OrganizeSortBy
   } = {}
 ): Promise<{ data: DbWallpaper[]; hasMore: boolean }> {
   if (!supabase) return { data: [], hasMore: false }
 
-  const { onlyFlagged = false, nsfwOnly = false, withTagsOnly = false, excludeTags = [], sortBy = "tagged_at" } = opts
+  const { onlyFlagged = false, nsfwOnly = false, withTagsOnly = false, pendingOnly = false, excludeTags = [], sortBy = "tagged_at" } = opts
 
   const words = query.trim().toLowerCase().split(/\s+/).filter(w => w.length >= 2 && !SEARCH_STOPWORDS.has(w))
 
@@ -155,6 +156,19 @@ export async function searchWallpapersForOrganize(
     q = q.or("ai_tags.neq.{},user_tags.neq.{}")
   }
 
+  // Só wallpapers com pelo menos uma tag sugerida por visitante esperando
+  // aprovação manual. Usa neq.{} em vez de not.eq.{} — mesma semântica,
+  // mas o operador neq é reconhecido pelo índice GIN e evita o full scan
+  // que causava statement timeout no Supabase free.
+  if (pendingOnly) {
+    q = q.neq("pending_tags", "{}")
+  }
+
+  // Quando filtrando por tags pendentes, força ordenação por indexed_at —
+  // tagged_at é NULL na maioria dos registros e faz o Postgres ignorar o
+  // índice parcial de pending_tags, causando full scan e statement timeout.
+  const effectiveSortBy = pendingOnly ? "indexed_at" : sortBy
+
   for (const raw of excludeTags) {
     const tag = raw.toLowerCase().trim()
     if (!tag) continue
@@ -162,7 +176,7 @@ export async function searchWallpapersForOrganize(
     q = q.not("user_tags", "cs", `{${tag}}`)
   }
 
-  q = q.order(sortBy, { ascending: false, nullsFirst: false })
+  q = q.order(effectiveSortBy, { ascending: false, nullsFirst: false })
 
   const { data, error } = await q.range(offset, offset + limit)
 
@@ -174,6 +188,65 @@ export async function searchWallpapersForOrganize(
   const rows = (data ?? []) as DbWallpaper[]
   const hasMore = rows.length > limit
   return { data: rows.slice(0, limit), hasMore }
+}
+
+// ─── Moderação de tags sugeridas por visitantes ──────────────────────────────
+
+// Aprova uma tag pendente: remove de pending_tags e adiciona em user_tags
+// (se ainda não estiver lá). Idempotente — chamar de novo numa tag já
+// aprovada não duplica nem dá erro.
+export async function approvePendingTag(wallpaperId: number, tag: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Supabase não configurado" }
+
+  const clean = tag.trim().toLowerCase()
+
+  const { data, error } = await supabase
+    .from("wallpapers")
+    .select("user_tags, pending_tags")
+    .eq("id", wallpaperId)
+    .single()
+
+  if (error || !data) return { ok: false, error: error?.message ?? "wallpaper não encontrado" }
+
+  const currentUser: string[] = data.user_tags ?? []
+  const currentPending: string[] = data.pending_tags ?? []
+
+  const newUser = currentUser.includes(clean) ? currentUser : [...currentUser, clean]
+  const newPending = currentPending.filter(t => t !== clean)
+
+  const { error: updErr } = await supabase
+    .from("wallpapers")
+    .update({ user_tags: newUser, pending_tags: newPending })
+    .eq("id", wallpaperId)
+
+  if (updErr) return { ok: false, error: updErr.message }
+  return { ok: true }
+}
+
+// Rejeita uma tag pendente: só remove de pending_tags, não vai pra user_tags.
+export async function rejectPendingTag(wallpaperId: number, tag: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Supabase não configurado" }
+
+  const clean = tag.trim().toLowerCase()
+
+  const { data, error } = await supabase
+    .from("wallpapers")
+    .select("pending_tags")
+    .eq("id", wallpaperId)
+    .single()
+
+  if (error || !data) return { ok: false, error: error?.message ?? "wallpaper não encontrado" }
+
+  const currentPending: string[] = data.pending_tags ?? []
+  const newPending = currentPending.filter(t => t !== clean)
+
+  const { error: updErr } = await supabase
+    .from("wallpapers")
+    .update({ pending_tags: newPending })
+    .eq("id", wallpaperId)
+
+  if (updErr) return { ok: false, error: updErr.message }
+  return { ok: true }
 }
 
 // Edição em massa: adiciona/remove tags de ai_tags e/ou ajusta is_nsfw

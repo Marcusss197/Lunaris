@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import type { DbWallpaper, OrganizeSortBy } from "@/lib/db"
+import type { DbWallpaper, OrganizeSortBy } from "@/lib/db-types"
 
 const PAGE_SIZE = 60
 
@@ -23,6 +23,7 @@ export default function OrganizeTagsPage() {
   const [onlyFlagged, setOnlyFlagged] = useState(false)
   const [nsfwOnly, setNsfwOnly] = useState(false)
   const [withTagsOnly, setWithTagsOnly] = useState(false)
+  const [pendingOnly, setPendingOnly] = useState(false)
   const [sortBy, setSortBy] = useState<OrganizeSortBy>("tagged_at")
   const [wallpapers, setWallpapers] = useState<DbWallpaper[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -55,6 +56,7 @@ export default function OrganizeTagsPage() {
         if (onlyFlagged) params.set("flagged", "1")
         if (nsfwOnly) params.set("nsfw", "1")
         if (withTagsOnly) params.set("withTags", "1")
+        if (pendingOnly) params.set("pending", "1")
         if (excludeApplied.trim()) params.set("exclude", excludeApplied.trim())
 
         const res = await fetch(`/api/organize-tags?${params}`)
@@ -73,7 +75,7 @@ export default function OrganizeTagsPage() {
     })()
 
     return () => { ignore = true }
-  }, [search, excludeApplied, offset, onlyFlagged, nsfwOnly, withTagsOnly, sortBy, refreshKey])
+  }, [search, excludeApplied, offset, onlyFlagged, nsfwOnly, withTagsOnly, pendingOnly, sortBy, refreshKey])
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -178,17 +180,40 @@ export default function OrganizeTagsPage() {
 
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1
 
+  async function handlePendingTag(action: "approve" | "reject", wallpaperId: number, tag: string) {
+    try {
+      const res = await fetch("/api/organize-tags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, wallpaperId, tag }),
+      })
+      if (res.ok) {
+        setWallpapers(prev => prev.map(w => {
+          if (w.id !== wallpaperId) return w
+          return { ...w, pending_tags: (w.pending_tags ?? []).filter(t => t !== tag) }
+        }))
+        setFeedback(action === "approve" ? `✓ Tag "${tag}" aprovada.` : `✗ Tag "${tag}" rejeitada.`)
+      } else {
+        setFeedback("Erro ao processar a tag.")
+      }
+    } catch {
+      setFeedback("Erro de rede.")
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-32">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur px-4 py-3">
-        <div className="mx-auto max-w-6xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-lg font-semibold">
-            <span className="lunaris-logo">Lunaris</span>
-            <span className="text-zinc-400"> — Organizar Tags</span>
-          </h1>
+        <div className="mx-auto max-w-6xl flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-semibold">
+              <span className="lunaris-logo">Lunaris</span>
+              <span className="text-zinc-400"> — Organizar Tags</span>
+            </h1>
+          </div>
 
-          <form onSubmit={handleSearchSubmit} className="flex flex-1 max-w-2xl flex-col gap-2 sm:ml-4 sm:flex-row">
+          <form onSubmit={handleSearchSubmit} className="flex flex-col gap-2 sm:flex-row">
             <input
               type="text"
               value={query}
@@ -211,35 +236,47 @@ export default function OrganizeTagsPage() {
             </button>
           </form>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={onlyFlagged}
-              onChange={e => { setOnlyFlagged(e.target.checked); setOffset(0); setSelected(new Set()) }}
-              className="accent-purple-500"
-            />
-            só com avisos de revisão
-          </label>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={onlyFlagged}
+                onChange={e => { setOnlyFlagged(e.target.checked); setOffset(0); setSelected(new Set()) }}
+                className="accent-purple-500"
+              />
+              só com avisos de revisão
+            </label>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={nsfwOnly}
-              onChange={e => { setNsfwOnly(e.target.checked); setOffset(0); setSelected(new Set()) }}
-              className="accent-purple-500"
-            />
-            somente +18
-          </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={nsfwOnly}
+                onChange={e => { setNsfwOnly(e.target.checked); setOffset(0); setSelected(new Set()) }}
+                className="accent-purple-500"
+              />
+              somente +18
+            </label>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={withTagsOnly}
-              onChange={e => { setWithTagsOnly(e.target.checked); setOffset(0); setSelected(new Set()) }}
-              className="accent-purple-500"
-            />
-            somente com tags
-          </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={withTagsOnly}
+                onChange={e => { setWithTagsOnly(e.target.checked); setOffset(0); setSelected(new Set()) }}
+                className="accent-purple-500"
+              />
+              somente com tags
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-zinc-400 whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={pendingOnly}
+                onChange={e => { setPendingOnly(e.target.checked); setOffset(0); setSelected(new Set()) }}
+                className="accent-amber-500"
+              />
+              <span className="text-amber-400">🕐 tags pendentes</span>
+            </label>
+          </div>
         </div>
 
         <div className="mx-auto max-w-6xl mt-2 flex flex-wrap gap-1.5">
@@ -350,6 +387,29 @@ export default function OrganizeTagsPage() {
                       </span>
                     )}
                   </div>
+
+                  {pendingOnly && (w.pending_tags ?? []).length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-zinc-700">
+                      <p className="text-[10px] font-medium text-amber-400 mb-1.5">🕐 Sugestões pendentes</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(w.pending_tags ?? []).map(tag => (
+                          <div key={tag} className="flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1">
+                            <span className="text-[11px] font-medium text-amber-300">{tag}</span>
+                            <button
+                              onClick={e => { e.preventDefault(); e.stopPropagation(); handlePendingTag("approve", w.id, tag) }}
+                              title="Aprovar"
+                              className="ml-1 flex items-center justify-center w-5 h-5 rounded-full bg-green-500/20 hover:bg-green-500/40 text-green-400 hover:text-green-300 transition-colors text-[12px] font-bold"
+                            >✓</button>
+                            <button
+                              onClick={e => { e.preventDefault(); e.stopPropagation(); handlePendingTag("reject", w.id, tag) }}
+                              title="Rejeitar"
+                              className="flex items-center justify-center w-5 h-5 rounded-full bg-red-500/20 hover:bg-red-500/40 text-red-400 hover:text-red-300 transition-colors text-[12px] font-bold"
+                            >✗</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </Link>
             </div>

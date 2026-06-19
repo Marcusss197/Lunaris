@@ -13,33 +13,46 @@ export async function POST(req: NextRequest) {
   const clean = tag.trim().toLowerCase()
   if (!clean || clean.length < 2) return NextResponse.json({ error: "tag inválida" }, { status: 400 })
 
-  // type: "user" → salva em user_tags, qualquer outro → ai_tags (comportamento legado)
-  const field = type === "user" ? "user_tags" : "ai_tags"
+  const isDevMode = process.env.DEV_MODE === "true"
 
   const { data, error } = await supabase
     .from("wallpapers")
-    .select("ai_tags, user_tags")
+    .select("ai_tags, user_tags, pending_tags")
     .eq("id", id)
     .single()
 
   if (error || !data) return NextResponse.json({ error: "wallpaper não encontrado" }, { status: 404 })
 
-  const currentAi:   string[] = data.ai_tags   ?? []
-  const currentUser: string[] = data.user_tags  ?? []
+  const currentAi:      string[] = data.ai_tags      ?? []
+  const currentUser:    string[] = data.user_tags    ?? []
+  const currentPending: string[] = data.pending_tags ?? []
 
-  // Não deixa duplicar em nenhuma das duas listas
-  if (currentAi.includes(clean) || currentUser.includes(clean))
-    return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: currentUser })
+  // type !== "user" → comportamento legado, salva direto em ai_tags
+  if (type !== "user") {
+    if (currentAi.includes(clean) || currentUser.includes(clean)) {
+      return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: currentUser, pending: false })
+    }
+    const newAiTags = [...currentAi, clean]
+    await supabase.from("wallpapers").update({ ai_tags: newAiTags }).eq("id", id)
+    return NextResponse.json({ ok: true, ai_tags: newAiTags, user_tags: currentUser, pending: false })
+  }
 
-  const newTags = field === "user_tags"
-    ? [...currentUser, clean]
-    : [...currentAi, clean]
+  if (currentAi.includes(clean) || currentUser.includes(clean)) {
+    return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: currentUser, pending: false, already_exists: true })
+  }
+  if (currentPending.includes(clean)) {
+    return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: currentUser, pending: true, already_exists: true })
+  }
 
-  await supabase.from("wallpapers").update({ [field]: newTags }).eq("id", id)
+  if (isDevMode) {
+    // DEV_MODE: aprova instantaneamente, vai direto pra user_tags
+    const newUserTags = [...currentUser, clean]
+    await supabase.from("wallpapers").update({ user_tags: newUserTags }).eq("id", id)
+    return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: newUserTags, pending: false })
+  }
 
-  return NextResponse.json({
-    ok: true,
-    ai_tags:   field === "ai_tags"   ? newTags : currentAi,
-    user_tags: field === "user_tags" ? newTags : currentUser,
-  })
+  // Produção: entra na fila de moderação
+  const newPendingTags = [...currentPending, clean]
+  await supabase.from("wallpapers").update({ pending_tags: newPendingTags }).eq("id", id)
+  return NextResponse.json({ ok: true, ai_tags: currentAi, user_tags: currentUser, pending: true })
 }

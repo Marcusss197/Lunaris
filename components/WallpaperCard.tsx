@@ -65,11 +65,8 @@ function buildTagDisplay(aiTags: string[], userTags: string[], steamTags: string
 
 export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
   const router = useRouter()
-  const [showTagInput, setShowTagInput] = useState(false)
-  const [tagInput, setTagInput]         = useState("")
-  const [localAiTags, setLocalAiTags]   = useState<string[]>(wallpaper.tags ?? [])
-  const [localUserTags, setLocalUserTags] = useState<string[]>(wallpaper.userTags ?? [])
-  const [saving, setSaving]             = useState(false)
+  const [localAiTags] = useState<string[]>(wallpaper.tags ?? [])
+  const [localUserTags] = useState<string[]>(wallpaper.userTags ?? [])
   const [nsfwEnabled, setNsfwEnabled]   = useState(readNsfwCookie)
   const [showNsfwConfirm, setShowNsfwConfirm] = useState(false)
   const [nsfwCountdown, setNsfwCountdown] = useState(5)
@@ -119,26 +116,6 @@ export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
   function cancelNsfwPopup() {
     if (countdownRef.current) clearInterval(countdownRef.current)
     setShowNsfwConfirm(false)
-  }
-
-  async function handleAddTag(e: React.FormEvent) {
-    e.preventDefault()
-    const clean = tagInput.trim().toLowerCase()
-    const allTags = [...localAiTags, ...localUserTags]
-    if (!clean || allTags.includes(clean)) { setTagInput(""); setShowTagInput(false); return }
-
-    setSaving(true)
-    try {
-      const res = await fetch("/api/add-tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: wallpaper.id, tag: clean, type: "user" }),
-      })
-      const data = await res.json()
-      if (data.ok) setLocalUserTags(data.user_tags ?? [...localUserTags, clean])
-    } catch { /* ignora */ }
-
-    setTagInput(""); setShowTagInput(false); setSaving(false)
   }
 
   const { ai, user, steam } = buildTagDisplay(localAiTags, localUserTags, wallpaper.steamTags ?? [])
@@ -217,38 +194,7 @@ export default function WallpaperCard({ wallpaper }: WallpaperCardProps) {
               {tag}
             </span>
           ))}
-
-          {/* Botão + */}
-          {!showTagInput && (
-            <button
-              onClick={e => { e.stopPropagation(); setShowTagInput(true) }}
-              className="tag-add text-[11px] px-2 py-0.5 rounded-full border transition-all hover:opacity-80"
-              title="Adicionar tag"
-            >+</button>
-          )}
         </div>
-
-        {/* Input de tag */}
-        {showTagInput && (
-          <form onSubmit={handleAddTag} className="flex gap-1 mb-2">
-            <input
-              autoFocus type="text" value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") { setShowTagInput(false); setTagInput("") } }}
-              placeholder="nova tag..." disabled={saving}
-              className="flex-1 text-[11px] px-2 py-0.5 rounded-full outline-none"
-              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-main)" }}
-            />
-            <button type="submit" disabled={saving}
-              className="text-[11px] px-2 py-0.5 rounded-full"
-              style={{ background: "rgba(139,92,246,0.25)", color: "#c4b5fd" }}>
-              {saving ? "..." : "✓"}
-            </button>
-            <button type="button" onClick={() => { setShowTagInput(false); setTagInput("") }}
-              className="text-[11px] px-2 py-0.5 rounded-full"
-              style={{ background: "var(--bg-surface)", color: "var(--text-dim)" }}>×</button>
-          </form>
-        )}
 
         {/* Downloads */}
         <div className="flex items-center gap-1 text-xs mb-1.5" style={{ color: "var(--text-dim)" }}>

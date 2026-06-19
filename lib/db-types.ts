@@ -21,6 +21,7 @@ export interface DbWallpaper {
   steam_tags: string[]
   ai_tags: string[]
   user_tags: string[]
+  pending_tags: string[]
   downloads: number
   is_nsfw: boolean
   is_animated: boolean
@@ -33,6 +34,7 @@ export interface DbWallpaper {
 }
 
 export type AuthorSortBy = "downloads" | "recent"
+export type OrganizeSortBy = "tagged_at" | "downloads" | "indexed_at"
 
 export interface AuthorProfile {
   authorId: string
@@ -55,6 +57,7 @@ export function toDbWallpaper(w: Wallpaper, aiTags: string[], titleOriginal: str
     steam_tags: w.steamTags,
     ai_tags: aiTags,
     user_tags: w.userTags ?? [],
+    pending_tags: [],
     downloads: w.downloads,
     is_nsfw: w.isNsfw,
     is_animated: w.isAnimated,
@@ -67,7 +70,6 @@ export function toDbWallpaper(w: Wallpaper, aiTags: string[], titleOriginal: str
   }
 }
 
-// Converte DbWallpaper para formato do frontend
 export function fromDbWallpaper(w: DbWallpaper): Wallpaper {
   return {
     id: w.id,
